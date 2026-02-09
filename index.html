@@ -1,118 +1,265 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pony IDE Ultimate</title>
+    <title>Pony IDE OS</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs/loader.min.js"></script>
     <style>
-        :root { --bg: #1e1e1e; --sidebar: #252526; --accent: #007acc; --text: #cccccc; }
-        body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        header { height: 45px; background: #333; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-bottom: 1px solid #111; }
-        .btn { background: var(--accent); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; }
+        :root { --bg: #1e1e1e; --sidebar: #252526; --accent: #007acc; --text: #cccccc; --border: #333; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* 頂部導航 */
+        header { height: 45px; background: #333; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-bottom: 1px solid #111; z-index: 20; }
+        .brand { font-weight: bold; color: white; font-size: 14px; display: flex; align-items: center; gap: 10px; }
+        .btn { background: var(--accent); color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; transition: 0.2s; }
+        .btn:active { transform: scale(0.95); }
+        .btn-green { background: #2ea043; }
+        .btn-gray { background: #444; }
+
+        /* 主工作區 */
         #workspace { flex: 1; display: flex; position: relative; overflow: hidden; }
-        #sidebar { width: 220px; background: var(--sidebar); border-right: 1px solid #333; position: absolute; z-index: 10; height: 100%; transform: translateX(-100%); transition: 0.3s; }
+        
+        /* 側邊欄 */
+        #sidebar { width: 220px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; position: absolute; z-index: 10; height: 100%; top: 0; left: 0; transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         #sidebar.open { transform: translateX(0); }
-        .file-item { padding: 8px 15px; font-size: 13px; cursor: pointer; border-left: 2px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        
+        .sidebar-header { padding: 10px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+        .file-controls { display: flex; gap: 5px; }
+        
+        #file-list { flex: 1; overflow-y: auto; }
+        .file-item { padding: 8px 15px; font-size: 13px; cursor: pointer; border-left: 2px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #aaa; }
+        .file-item:hover { background: #2a2d2e; color: #fff; }
         .file-item.active { background: #37373d; border-left-color: var(--accent); color: white; }
-        #editor-container { flex: 1; }
-        #ai-drawer { position: absolute; bottom: 0; width: 100%; height: 45%; background: var(--bg); border-top: 2px solid var(--accent); display: flex; flex-direction: column; transform: translateY(100%); transition: 0.3s; z-index: 30; }
+        .empty-msg { text-align: center; color: #666; font-size: 12px; margin-top: 20px; padding: 0 10px; }
+
+        /* 編輯器 */
+        #editor-container { flex: 1; width: 100%; height: 100%; background: #1e1e1e; }
+        .no-file-screen { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #555; font-size: 14px; }
+
+        /* AI 面板 */
+        #ai-drawer { position: absolute; bottom: 0; width: 100%; height: 50%; background: var(--bg); border-top: 2px solid var(--accent); display: flex; flex-direction: column; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 30; box-shadow: 0 -5px 20px rgba(0,0,0,0.5); }
         #ai-drawer.open { transform: translateY(0); }
-        #chat-log { flex: 1; overflow-y: auto; padding: 15px; font-family: monospace; font-size: 13px; white-space: pre-wrap; }
-        .msg-ai { color: #ce9178; margin-bottom: 15px; border-bottom: 1px solid #333; }
-        #input-area { padding: 10px; background: #252526; display: flex; gap: 8px; flex-wrap: wrap; }
-        select, input { background: #3c3c3c; border: 1px solid #555; color: white; padding: 8px; border-radius: 4px; }
-        #boot-screen { position: fixed; inset: 0; background: #1e1e1e; z-index: 100; display: flex; align-items: center; justify-content: center; }
-        .fab { position: fixed; bottom: 20px; right: 20px; width: 48px; height: 48px; background: var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 40; font-size: 24px; }
+        .drawer-header { padding: 8px 15px; background: #2d2d2d; font-size: 12px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        #chat-log { flex: 1; overflow-y: auto; padding: 15px; font-family: 'Consolas', monospace; font-size: 13px; line-height: 1.5; }
+        .msg-user { color: #9cdcfe; font-weight: bold; margin-bottom: 5px; text-align: right; }
+        .msg-ai { color: #ce9178; margin-bottom: 15px; padding: 10px; background: #252526; border-radius: 6px; white-space: pre-wrap; }
+        
+        #input-area { padding: 10px; background: #252526; display: flex; gap: 8px; align-items: center; }
+        #modelSelect { background: #333; color: #aaa; border: 1px solid #444; border-radius: 4px; padding: 6px; font-size: 11px; max-width: 80px; }
+        #prompt-input { flex: 1; background: #3c3c3c; border: 1px solid #555; color: white; padding: 10px; border-radius: 20px; outline: none; }
+
+        /* 啟動畫面 */
+        #boot-screen { position: fixed; inset: 0; background: #1e1e1e; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; transition: opacity 0.5s; }
+        .card { background: #252526; padding: 30px; border-radius: 12px; width: 100%; max-width: 350px; border: 1px solid #333; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        input[type="password"] { width: 90%; padding: 12px; margin: 15px 0; background: #333; border: 1px solid #444; color: white; border-radius: 6px; text-align: center; font-size: 14px; }
+        
+        /* 隱藏的檔案輸入框 */
+        #hidden-file-input { display: none; }
+
+        /* 浮動按鈕 */
+        .fab { position: fixed; bottom: 20px; right: 20px; width: 50px; height: 50px; background: var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,122,204,0.4); z-index: 40; cursor: pointer; font-size: 24px; transition: transform 0.2s; }
+        .fab:active { transform: scale(0.9); }
     </style>
 </head>
 <body>
+
     <div id="boot-screen">
-        <div style="background:#252526; padding:20px; border-radius:8px; width:85%; max-width:350px; text-align:center; border:1px solid #333;">
-            <h2 style="color:white; margin-top:0;">Pony IDE Pro</h2>
-            <input type="password" id="apiKey" placeholder="API Key (sk-or-v1...)" style="width:90%; margin-bottom:10px;">
-            <input type="file" id="zipInput" accept=".zip" style="margin-bottom:15px; font-size:12px;">
-            <button class="btn" style="width:100%; padding:10px;" onclick="initSystem()">啟動環境 🚀</button>
+        <div class="card">
+            <h2 style="color:white; margin:0 0 10px 0;">Pony IDE <span style="font-size:12px; color:#4cd964">OS</span></h2>
+            <p style="color:#888; font-size:13px;">請輸入 OpenRouter API Key</p>
+            <input type="password" id="apiKey" placeholder="sk-or-v1...">
+            <button class="btn" style="width:100%; padding:12px; font-size:14px;" onclick="enterIDE()">進入系統</button>
         </div>
     </div>
 
     <header>
-        <button class="btn" onclick="toggleSidebar()">☰ 檔案</button>
-        <div id="current-filename" style="color:#888; font-size:12px;">未選擇</div>
-        <button class="btn" style="background:#2ea043;" onclick="exportZip()">💾 匯出</button>
+        <div class="brand">
+            <button class="btn btn-gray" onclick="toggleSidebar()">☰</button>
+            <span id="current-filename">Pony IDE</span>
+        </div>
+        <button class="btn btn-green" onclick="exportZip()">💾 打包下載</button>
     </header>
 
     <div id="workspace">
-        <div id="sidebar"><div id="file-list"></div></div>
-        <div id="editor-container"></div>
+        <div id="sidebar">
+            <div class="sidebar-header">
+                <span style="font-size:12px; color:#888; font-weight:bold;">EXPLORER</span>
+                <div class="file-controls">
+                    <button class="btn" style="width:100%; display:flex; align-items:center; justify-content:center; gap:5px;" onclick="triggerUpload()">
+                        <span>+ 載入檔案 / ZIP</span>
+                    </button>
+                    <input type="file" id="hidden-file-input" accept=".zip,.js,.html,.css,.json,.txt" onchange="handleFileUpload()">
+                </div>
+            </div>
+            <div id="file-list">
+                <div class="empty-msg">尚未載入檔案<br>請點擊上方 + 按鈕</div>
+            </div>
+        </div>
+
+        <div id="editor-container">
+            <div class="no-file-screen">
+                <div style="font-size:40px; margin-bottom:20px;">📂</div>
+                請點擊左上角選單載入專案
+            </div>
+        </div>
     </div>
 
     <div id="ai-drawer">
-        <div style="padding:8px 15px; background:#2d2d2d; font-size:12px; display:flex; justify-content:space-between;" onclick="toggleAI()">
-            <span>🤖 Pony Assistant</span><span>⬇</span>
+        <div class="drawer-header" onclick="toggleAI()">
+            <span>🤖 Pony Assistant</span>
+            <span style="font-size:18px;">⌄</span>
         </div>
-        <div id="chat-log"></div>
+        <div id="chat-log">
+            <div style="text-align:center; color:#666; margin-top:20px;">
+                AI 就緒。<br>你可以問我關於代碼的問題。
+            </div>
+        </div>
         <div id="input-area">
-            <select id="modelSelect" style="font-size:12px;">
-                <option value="openrouter/pony-alpha">Pony Alpha</option>
-                <option value="liquid/lfm-40b">Liquid LFM (穩定)</option>
-                <option value="deepseek/deepseek-r1">DeepSeek R1</option>
-                <option value="google/gemini-2.0-flash-001">Gemini 2.0</option>
+            <select id="modelSelect">
+                <option value="openrouter/pony-alpha">Pony</option>
+                <option value="liquid/lfm-40b">Liquid</option>
+                <option value="google/gemini-2.0-flash-001">Gemini</option>
             </select>
-            <input type="text" id="prompt-input" placeholder="問問題..." style="flex:1;">
+            <input type="text" id="prompt-input" placeholder="輸入指令...">
             <button class="btn" onclick="askAI()">發送</button>
         </div>
     </div>
+    
     <div class="fab" onclick="toggleAI()">💬</div>
 
     <script>
         let editor, files = {}, activePath = null, key = "";
         require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs' }});
 
-        async function initSystem() {
-            key = document.getElementById('apiKey').value;
-            const zipInput = document.getElementById('zipInput').files[0];
-            if(!key || !zipInput) return alert("請輸入 Key 並選擇 ZIP");
+        // 1. 進入系統 (只存 Key)
+        function enterIDE() {
+            const inputKey = document.getElementById('apiKey').value;
+            if(!inputKey) return alert("請輸入 API Key");
+            key = inputKey;
             
-            const zip = new JSZip();
-            try {
-                const content = await zip.loadAsync(zipInput);
-                const list = document.getElementById('file-list');
-                list.innerHTML = "";
-                let firstFile = null;
-                for(let path in content.files) {
-                    if(!content.files[path].dir && !path.startsWith("__")) {
-                        files[path] = await content.files[path].async("string");
-                        const div = document.createElement("div");
-                        div.className = "file-item";
-                        div.innerText = path;
-                        div.onclick = () => openFile(path, div);
-                        list.appendChild(div);
-                        if(!firstFile) firstFile = {path, div};
-                    }
-                }
-                document.getElementById('boot-screen').style.display = 'none';
-                require(['vs/editor/editor.main'], function() {
-                    editor = monaco.editor.create(document.getElementById('editor-container'), {
-                        value: "// Select a file", language: 'javascript', theme: 'vs-dark', automaticLayout: true, minimap: { enabled: false }
-                    });
-                    editor.onDidChangeModelContent(() => { if(activePath) files[activePath] = editor.getValue(); });
-                    if(firstFile) openFile(firstFile.path, firstFile.div);
+            // 淡出動畫
+            const boot = document.getElementById('boot-screen');
+            boot.style.opacity = '0';
+            setTimeout(() => { 
+                boot.style.display = 'none'; 
+                // 初始化編輯器 (即使沒檔案也要先準備好)
+                initEditor();
+                // 自動打開側邊欄提示用戶上傳
+                toggleSidebar();
+            }, 500);
+        }
+
+        function initEditor() {
+            require(['vs/editor/editor.main'], function() {
+                // 如果已經有編輯器實例就不重複建立
+                if(editor) return;
+                
+                // 清除佔位畫面
+                document.getElementById('editor-container').innerHTML = "";
+                
+                editor = monaco.editor.create(document.getElementById('editor-container'), {
+                    value: "// 請載入檔案...",
+                    language: 'javascript',
+                    theme: 'vs-dark',
+                    automaticLayout: true,
+                    minimap: { enabled: false },
+                    fontSize: 14,
+                    padding: { top: 10 }
                 });
-            } catch(e) { alert("Error: " + e); }
+                
+                editor.onDidChangeModelContent(() => {
+                    if(activePath && files[activePath]) files[activePath] = editor.getValue();
+                });
+            });
+        }
+
+        // 2. 處理檔案上傳 (支援 ZIP 和 單檔)
+        function triggerUpload() {
+            document.getElementById('hidden-file-input').click();
+        }
+
+        async function handleFileUpload() {
+            const fileInput = document.getElementById('hidden-file-input');
+            const file = fileInput.files[0];
+            if(!file) return;
+
+            // 如果是 ZIP
+            if(file.name.endsWith('.zip')) {
+                const zip = new JSZip();
+                try {
+                    const content = await zip.loadAsync(file);
+                    const list = document.getElementById('file-list');
+                    list.innerHTML = ""; // 清空舊列表
+                    files = {}; // 清空舊數據
+
+                    let firstFile = null;
+                    for(let path in content.files) {
+                        if(!content.files[path].dir && !path.startsWith("__")) {
+                            files[path] = await content.files[path].async("string");
+                            addFileToList(path);
+                            if(!firstFile) firstFile = path;
+                        }
+                    }
+                    if(firstFile) openFile(firstFile);
+                    alert(`成功載入專案：${file.name}`);
+                } catch(e) { alert("ZIP 讀取錯誤: " + e); }
+            } 
+            // 如果是單一檔案 (JS/HTML/TXT...)
+            else {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    files[file.name] = e.target.result;
+                    addFileToList(file.name);
+                    openFile(file.name);
+                };
+                reader.readAsText(file);
+            }
+            // 重置 input 以便下次能選同個檔案
+            fileInput.value = '';
+        }
+
+        function addFileToList(path) {
+            const list = document.getElementById('file-list');
+            // 移除 "尚未載入" 訊息
+            if(list.querySelector('.empty-msg')) list.innerHTML = "";
+            
+            // 檢查是否已存在，若有則更新，若無則新增
+            let existing = Array.from(list.children).find(div => div.innerText === path);
+            if(!existing) {
+                const div = document.createElement("div");
+                div.className = "file-item";
+                div.innerText = path;
+                div.onclick = () => openFile(path, div);
+                list.appendChild(div);
+            }
         }
 
         function openFile(path, el) {
+            if(!editor) initEditor();
+            
             activePath = path;
             document.getElementById('current-filename').innerText = path;
+            
+            // 設定語言
             const ext = path.split('.').pop();
-            const lang = ext==='js'?'javascript':(ext==='html'?'html':'css');
+            const langMap = {'js':'javascript', 'html':'html', 'css':'css', 'json':'json', 'txt':'plaintext'};
+            const lang = langMap[ext] || 'javascript';
+            
             monaco.editor.setModelLanguage(editor.getModel(), lang);
-            editor.setValue(files[path]);
+            editor.setValue(files[path] || "");
+            
+            // UI 高亮
             document.querySelectorAll('.file-item').forEach(x => x.classList.remove('active'));
+            // 如果沒有傳入 el，試著找對應的 DOM
+            if(!el) {
+                el = Array.from(document.querySelectorAll('.file-item')).find(x => x.innerText === path);
+            }
             if(el) el.classList.add('active');
-            if(window.innerWidth < 600) toggleSidebar();
+            
+            // 手機版自動收起側邊欄
+            if(window.innerWidth < 600) document.getElementById('sidebar').classList.remove('open');
         }
 
         async function askAI() {
@@ -122,11 +269,12 @@
             const txt = input.value;
             if(!txt) return;
 
-            log.innerHTML += `<div style="color:#9cdcfe">YOU: ${txt}</div><div id="thinking">Thinking...</div>`;
+            log.innerHTML += `<div class="msg-user">${txt}</div><div id="thinking" style="color:#aaa; font-style:italic; padding:10px;">Thinking...</div>`;
             log.scrollTop = log.scrollHeight;
             input.value = "";
 
-            const context = `Project: ${Object.keys(files).join(',')}\nFile: ${activePath}\nCode:\n${files[activePath]}\n\nReq: ${txt}`;
+            // 構建 Context (包含所有檔案)
+            const context = `Project Files: ${Object.keys(files).join(', ')}\n\nCurrent File: ${activePath}\nCode:\n${files[activePath]}\n\nUser Request: ${txt}`;
 
             try {
                 const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -134,26 +282,35 @@
                     headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
                     body: JSON.stringify({
                         model: model,
-                        messages: [{role: "user", content: context}],
-                        // 移除 reasoning 參數以避免部分模型噴 500
+                        messages: [{role: "user", content: context}]
                     })
                 });
                 const data = await res.json();
                 document.getElementById('thinking').remove();
-                const reply = data.choices ? data.choices[0].message.content : "Error: " + JSON.stringify(data);
-                log.innerHTML += `<div class="msg-ai">${reply}</div>`;
-            } catch(e) { document.getElementById('thinking').innerHTML = "Net Error: " + e; }
+                
+                if (data.error) {
+                    log.innerHTML += `<div class="msg-ai" style="color:red">Error: ${data.error.message}</div>`;
+                } else {
+                    const reply = data.choices ? data.choices[0].message.content : "No response";
+                    log.innerHTML += `<div class="msg-ai">${reply}</div>`;
+                }
+            } catch(e) {
+                const think = document.getElementById('thinking');
+                if(think) think.innerHTML = "Net Error: " + e;
+            }
             log.scrollTop = log.scrollHeight;
         }
 
         function exportZip() {
+            if(Object.keys(files).length === 0) return alert("沒有檔案可以匯出！");
             const zip = new JSZip();
             for(let path in files) zip.file(path, files[path]);
             zip.generateAsync({type:"blob"}).then(blob => {
                 const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob); a.download = "updated_game.zip"; a.click();
+                a.href = URL.createObjectURL(blob); a.download = "project_export.zip"; a.click();
             });
         }
+
         function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
         function toggleAI() { document.getElementById('ai-drawer').classList.toggle('open'); }
     </script>
