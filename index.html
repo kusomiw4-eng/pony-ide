@@ -2,545 +2,616 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Apollo IDE - Interactive Audit</title>
+    <title>Apollo IDE - Interactive Audit V2</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        :root { --bg: #000; --accent: #00ff41; --text: #00ff41; --err: #ff3333; --warn: #ffaa00; }
+        :root { --bg: #050505; --panel: #0a0a0a; --accent: #00ff41; --text: #e0e0e0; --err: #ff3333; --warn: #ffaa00; --border: #333; }
         * { box-sizing: border-box; }
-        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100vh; display: flex; flex-direction: column; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
         
-        header { height: 45px; background: #0a0a0a; border-bottom: 1px solid #333; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; }
-        .logo { font-size: 14px; font-weight: bold; }
+        /* 頂部導航 */
+        header { height: 50px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 15px; user-select: none; }
+        .logo { font-size: 16px; font-weight: bold; letter-spacing: 1px; color: var(--accent); text-shadow: 0 0 5px rgba(0,255,65,0.3); }
+        .controls { display: flex; gap: 10px; align-items: center; }
         
+        /* 主佈局 */
         #main { flex: 1; display: flex; overflow: hidden; }
         
         /* 左側：檔案列表 */
-        #files-panel { width: 220px; background: #0a0a0a; border-right: 1px solid #333; display: flex; flex-direction: column; }
-        #files-header { padding: 10px; border-bottom: 1px solid #333; font-size: 11px; color: #666; }
+        #files-panel { width: 240px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        #files-header { padding: 10px; border-bottom: 1px solid var(--border); font-size: 11px; color: #888; display: flex; justify-content: space-between; }
         #files-list { flex: 1; overflow-y: auto; }
-        .file-item { padding: 8px 10px; font-size: 11px; border-bottom: 1px solid #222; cursor: pointer; }
-        .file-item:hover { background: #111; }
-        .file-item.selected { background: #1a1a1a; border-left: 2px solid var(--accent); }
+        .file-item { padding: 8px 12px; font-size: 12px; border-bottom: 1px solid #1a1a1a; cursor: pointer; transition: 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .file-item:hover { background: #151515; color: #fff; }
+        .file-item.selected { background: #1a1a1a; border-left: 3px solid var(--accent); color: #fff; }
         .file-item.has-issue { color: var(--warn); }
+        .file-item.has-critical { color: var(--err); font-weight: bold; }
         
-        /* 中間：主區域 */
-        #center-panel { flex: 1; display: flex; flex-direction: column; }
+        /* 中間：代碼與問題 */
+        #center-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; }
         
-        /* 上半：代碼區 */
-        #code-section { height: 45%; display: flex; flex-direction: column; border-bottom: 1px solid #333; }
-        #code-header { padding: 8px 12px; background: #0a0a0a; border-bottom: 1px solid #222; font-size: 11px; display: flex; justify-content: space-between; }
-        #code-view { flex: 1; overflow: auto; padding: 12px; font-size: 12px; line-height: 1.7; white-space: pre; }
-        #code-view .line { display: block; }
-        #code-view .line:hover { background: #111; }
-        #code-view .line.error { background: #1a0000; border-left: 2px solid var(--err); }
-        #code-view .line.warning { background: #1a1a00; border-left: 2px solid var(--warn); }
+        /* 代碼區 */
+        #code-section { height: 60%; display: flex; flex-direction: column; border-bottom: 1px solid var(--border); position: relative; }
+        #code-header { padding: 8px 15px; background: #111; border-bottom: 1px solid var(--border); font-size: 11px; display: flex; justify-content: space-between; color: #aaa; }
+        #code-view { flex: 1; overflow: auto; padding: 15px; font-size: 13px; line-height: 1.6; white-space: pre; background: #080808; font-family: 'Consolas', 'Monaco', monospace; }
+        #code-view .line { display: block; padding: 0 5px; }
+        #code-view .line:hover { background: #222; }
+        #code-view .line.error { background: rgba(255, 51, 51, 0.1); border-left: 3px solid var(--err); }
+        #code-view .line.warning { background: rgba(255, 170, 0, 0.1); border-left: 3px solid var(--warn); }
         
-        /* 下半：問題列表 */
-        #issues-section { height: 55%; display: flex; flex-direction: column; }
-        #issues-header { padding: 8px 12px; background: #0a0a0a; border-bottom: 1px solid #222; font-size: 11px; display: flex; justify-content: space-between; }
+        /* 問題區 */
+        #issues-section { height: 40%; display: flex; flex-direction: column; background: #080808; }
+        #issues-header { padding: 8px 15px; background: #111; border-bottom: 1px solid var(--border); font-size: 11px; display: flex; justify-content: space-between; align-items: center; }
         #issues-list { flex: 1; overflow-y: auto; padding: 10px; }
         
-        .issue-card { background: #0a0a0a; border: 1px solid #333; padding: 10px; margin-bottom: 8px; cursor: pointer; }
-        .issue-card:hover { border-color: var(--accent); }
+        .issue-card { background: #111; border: 1px solid #333; padding: 12px; margin-bottom: 8px; cursor: pointer; border-radius: 4px; transition: 0.2s; }
+        .issue-card:hover { border-color: #666; transform: translateX(2px); }
         .issue-card.critical { border-left: 3px solid var(--err); }
         .issue-card.high { border-left: 3px solid #ff6600; }
         .issue-card.medium { border-left: 3px solid var(--warn); }
         .issue-card.low { border-left: 3px solid #555; }
-        .issue-title { font-size: 11px; color: #fff; margin-bottom: 5px; }
-        .issue-meta { font-size: 10px; color: #666; }
-        .issue-badge { font-size: 9px; padding: 2px 6px; border-radius: 3px; margin-left: 8px; }
-        .badge-critical { background: #331111; color: var(--err); }
-        .badge-high { background: #332200; color: #ff6600; }
-        .badge-medium { background: #332200; color: var(--warn); }
+        .issue-top { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .issue-title { font-size: 12px; color: #fff; font-weight: bold; }
+        .issue-badge { font-size: 10px; padding: 2px 6px; border-radius: 2px; text-transform: uppercase; font-weight: bold; }
+        .badge-critical { background: #330000; color: var(--err); }
+        .badge-high { background: #331a00; color: #ff6600; }
+        .badge-medium { background: #332b00; color: var(--warn); }
         .badge-low { background: #222; color: #888; }
+        .issue-desc { font-size: 11px; color: #888; line-height: 1.4; }
         
         /* 右側：AI 對話框 */
-        #chat-panel { width: 380px; background: #0a0a0a; border-left: 1px solid #333; display: flex; flex-direction: column; }
-        #chat-header { padding: 10px 12px; border-bottom: 1px solid #333; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
-        #chat-messages { flex: 1; overflow-y: auto; padding: 12px; }
+        #chat-panel { width: 400px; background: var(--panel); border-left: 1px solid var(--border); display: flex; flex-direction: column; transition: 0.3s; }
+        #chat-header { padding: 12px; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: bold; background: #111; display: flex; justify-content: space-between; align-items: center; }
+        #chat-messages { flex: 1; overflow-y: auto; padding: 15px; scroll-behavior: smooth; }
         
-        .message { margin-bottom: 15px; }
+        .message { margin-bottom: 20px; animation: fadeIn 0.3s; }
         .message-user { text-align: right; }
-        .message-user .bubble { background: #1a3a1a; display: inline-block; padding: 8px 12px; border-radius: 8px; max-width: 90%; text-align: left; font-size: 12px; }
-        .message-ai .bubble { background: #111; padding: 10px 12px; border-radius: 8px; font-size: 12px; line-height: 1.6; }
-        .message-ai .bubble pre { background: #000; padding: 8px; margin: 8px 0; overflow-x: auto; font-size: 11px; }
+        .message-user .bubble { background: #1a4d1a; color: #fff; display: inline-block; padding: 10px 14px; border-radius: 12px 12px 0 12px; max-width: 90%; text-align: left; font-size: 13px; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+        .message-ai .bubble { background: #1a1a1a; border: 1px solid #333; color: #ddd; padding: 12px 16px; border-radius: 12px 12px 12px 0; font-size: 13px; line-height: 1.6; max-width: 95%; }
+        .message-ai pre { background: #000; padding: 10px; border-radius: 6px; border: 1px solid #333; overflow-x: auto; margin: 10px 0; font-family: 'Fira Code', monospace; font-size: 12px; }
+        .message-ai code { background: #222; padding: 2px 5px; border-radius: 3px; font-family: monospace; font-size: 12px; color: #e6cd69; }
+        .typing .bubble { font-style: italic; color: #666; }
         
-        #chat-input-area { padding: 10px; border-top: 1px solid #333; }
-        #chat-input { width: 100%; background: #111; border: 1px solid #333; color: #fff; padding: 10px; font-family: monospace; font-size: 12px; resize: none; height: 60px; }
-        #chat-input:focus { outline: none; border-color: var(--accent); }
-        #chat-send { margin-top: 8px; background: var(--accent); color: #000; border: none; padding: 8px 16px; cursor: pointer; font-weight: bold; font-size: 11px; }
-        #chat-send:disabled { background: #333; color: #666; }
+        #chat-input-area { padding: 15px; border-top: 1px solid var(--border); background: #050505; }
+        #chat-input { width: 100%; background: #151515; border: 1px solid #333; color: #fff; padding: 12px; font-family: monospace; font-size: 13px; resize: none; height: 70px; border-radius: 6px; outline: none; transition: 0.2s; }
+        #chat-input:focus { border-color: var(--accent); background: #1a1a1a; }
         
-        .quick-actions { margin-bottom: 10px; }
-        .quick-btn { background: #111; border: 1px solid #333; color: #888; padding: 5px 10px; font-size: 10px; cursor: pointer; margin-right: 5px; margin-bottom: 5px; }
+        .btn { background: #222; color: #ccc; border: 1px solid #444; padding: 6px 12px; cursor: pointer; font-size: 11px; border-radius: 4px; transition: 0.2s; }
+        .btn:hover { background: #333; border-color: #666; color: #fff; }
+        .btn-primary { background: var(--accent); color: #000; border: none; font-weight: bold; }
+        .btn-primary:hover { background: #00cc33; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .quick-actions { display: flex; gap: 5px; margin-bottom: 10px; flex-wrap: wrap; }
+        .quick-btn { font-size: 10px; padding: 4px 8px; background: #111; border: 1px solid #333; color: #666; cursor: pointer; border-radius: 10px; }
         .quick-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+        /* 啟動畫面 */
+        #boot { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: flex; justify-content: center; align-items: center; flex-direction: column; z-index: 999; backdrop-filter: blur(5px); }
+        .boot-card { background: #111; padding: 30px; border: 1px solid #333; border-radius: 8px; width: 350px; text-align: center; box-shadow: 0 0 30px rgba(0,255,65,0.1); }
+        .boot-title { font-size: 20px; margin-bottom: 5px; color: var(--accent); font-weight: bold; letter-spacing: 1px; }
+        .boot-input { width: 100%; padding: 10px; margin: 10px 0; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; text-align: center; }
+        select.boot-input { cursor: pointer; }
         
-        /* 啟動 */
-        #boot { position: fixed; inset: 0; background: rgba(0,0,0,0.98); display: flex; justify-content: center; align-items: center; flex-direction: column; z-index: 999; }
-        .boot-title { font-size: 24px; margin-bottom: 10px; }
-        .boot-desc { color: #666; margin-bottom: 30px; font-size: 12px; }
-        input[type="text"], input[type="password"] { background: #111; border: 1px solid #333; color: #fff; padding: 10px; width: 280px; margin: 5px; text-align: center; }
-        button { background: var(--accent); color: #000; border: none; padding: 10px 25px; margin-top: 10px; cursor: pointer; font-weight: bold; }
-        button:disabled { background: #333; color: #666; }
+        /* 滾動條 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #050505; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
         
-        #file-input { display: none; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-thumb { background: #333; }
-        
-        .typing { color: #666; font-style: italic; }
+        #scan-progress-bar { height: 2px; background: var(--accent); width: 0%; transition: width 0.3s; position: absolute; top: 0; left: 0; z-index: 10; }
     </style>
 </head>
 <body>
 
     <div id="boot">
-        <div class="boot-title">⬡ APOLLO AUDIT</div>
-        <div class="boot-desc">Interactive Code Analysis with AI Chat</div>
-        <input type="text" id="endpoint" placeholder="API Endpoint">
-        <input type="password" id="key" placeholder="API Key">
-        <button onclick="init()">START</button>
+        <div class="boot-card">
+            <div class="boot-title">APOLLO IDE V2</div>
+            <div style="color:#666; font-size:12px; margin-bottom:20px;">Interactive Audit & Code Analysis</div>
+            
+            <input type="password" id="key" class="boot-input" placeholder="Enter OpenRouter API Key">
+            
+            <select id="model-select" class="boot-input">
+                <option value="openrouter/pony-alpha">🦄 Pony Alpha (200k Context)</option>
+                <option value="liquid/lfm-40b">💧 Liquid LFM-40B (Logic)</option>
+                <option value="google/gemini-2.0-flash-001">⚡ Gemini 2.0 Flash</option>
+                <option value="anthropic/claude-3-haiku">🌪 Claude 3 Haiku</option>
+            </select>
+            
+            <button class="btn btn-primary" style="width:100%; padding:12px; margin-top:10px;" onclick="init()">INITIALIZE SYSTEM</button>
+        </div>
     </div>
 
     <header>
-        <div class="logo">APOLLO_AUDIT // INTERACTIVE</div>
-        <div style="display:flex;gap:15px;align-items:center;font-size:11px;">
-            <span id="status">READY</span>
-            <button onclick="document.getElementById('file-input').click()">LOAD ZIP</button>
-            <button id="scanBtn" onclick="startScan()" style="display:none">SCAN ALL</button>
+        <div class="logo">⬡ APOLLO_AUDIT</div>
+        <div class="controls">
+            <span id="status-text" style="font-size:11px; color:#666;">IDLE</span>
+            <select id="header-model" style="background:#111; color:#aaa; border:1px solid #333; font-size:11px; padding:3px;" onchange="updateModel(this.value)">
+                <option value="openrouter/pony-alpha">Pony Alpha</option>
+                <option value="liquid/lfm-40b">Liquid 40B</option>
+            </select>
+            <button class="btn" onclick="document.getElementById('file-input').click()">📂 LOAD ZIP</button>
+            <button id="scanBtn" class="btn btn-primary" onclick="startScan()" style="display:none">⚡ SCAN ALL</button>
         </div>
     </header>
 
     <div id="main">
         <div id="files-panel">
-            <div id="files-header">FILES (<span id="file-count">0</span>)</div>
+            <div id="files-header">
+                <span>EXPLORER</span>
+                <span id="file-count">0 files</span>
+            </div>
             <div id="files-list"></div>
         </div>
         
         <div id="center-panel">
             <div id="code-section">
+                <div id="scan-progress-bar"></div>
                 <div id="code-header">
-                    <span id="current-file">No file selected</span>
-                    <span id="code-info"></span>
+                    <span id="current-file-name" style="font-weight:bold; color:#fff;">No File Selected</span>
+                    <span id="code-meta"></span>
                 </div>
-                <div id="code-view">// Select a file to view code
-// Click on issues to jump to line
-// Chat with AI on the right panel</div>
+                <div id="code-view">// Welcome to Apollo IDE V2
+// 1. Enter your OpenRouter Key
+// 2. Load a ZIP file (Auto-filters Mac junk)
+// 3. Click 'SCAN ALL' to audit code
+// 4. Select a file to view and chat</div>
             </div>
             
             <div id="issues-section">
                 <div id="issues-header">
-                    <span>ISSUES (<span id="issue-count">0</span>)</span>
-                    <span id="scan-status"></span>
+                    <span>DETECTED ISSUES (<span id="issue-count">0</span>)</span>
+                    <div style="display:flex; gap:10px; font-size:10px;">
+                        <span style="color:var(--err)">● CRITICAL: <span id="stat-crit">0</span></span>
+                        <span style="color:var(--warn)">● HIGH: <span id="stat-high">0</span></span>
+                    </div>
                 </div>
                 <div id="issues-list">
-                    <div style="color:#666;text-align:center;padding:30px;font-size:11px;">Load ZIP and scan to find issues</div>
+                    <div style="text-align:center; padding:30px; color:#444; font-size:12px;">
+                        Issues detected by AI will appear here
+                    </div>
                 </div>
             </div>
         </div>
         
         <div id="chat-panel">
             <div id="chat-header">
-                <span>💬 CHAT WITH APOLLO</span>
-                <span style="font-size:10px;color:#666">Ask anything</span>
+                <span>💬 AI ASSISTANT</span>
+                <button class="btn" style="padding:2px 8px; font-size:10px;" onclick="clearChat()">CLEAR</button>
             </div>
             <div id="chat-messages">
                 <div class="message message-ai">
                     <div class="bubble">
-                        👋 Hi! I'm Apollo. Load your code and I'll help you find bugs.<br><br>
-                        You can ask me:<br>
-                        • "Explain this function"<br>
-                        • "Why is this code wrong?"<br>
-                        • "How do I fix this?"<br>
-                        • "Review this file for security issues"
+                        System Online. Ready to analyze your codebase.<br>
+                        I can read your files and help you fix bugs.<br>
+                        <b>Try selecting a file and clicking "Explain"!</b>
                     </div>
                 </div>
             </div>
             <div id="chat-input-area">
                 <div class="quick-actions">
-                    <button class="quick-btn" onclick="quickAsk('explain')">Explain this</button>
-                    <button class="quick-btn" onclick="quickAsk('fix')">How to fix?</button>
-                    <button class="quick-btn" onclick="quickAsk('security')">Security?</button>
-                    <button class="quick-btn" onclick="quickAsk('optimize')">Optimize</button>
+                    <button class="quick-btn" onclick="quickAsk('explain')">Explain File</button>
+                    <button class="quick-btn" onclick="quickAsk('fix')">Find Bugs</button>
+                    <button class="quick-btn" onclick="quickAsk('refactor')">Refactor</button>
                 </div>
-                <textarea id="chat-input" placeholder="Ask Apollo about your code..."></textarea>
-                <button id="chat-send" onclick="sendMessage()">SEND</button>
+                <textarea id="chat-input" placeholder="Type your question... (Shift+Enter for new line)"></textarea>
+                <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+                    <button id="sendBtn" class="btn btn-primary" onclick="sendMessage()">SEND MESSAGE</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <input type="file" id="file-input" accept=".zip">
+    <input type="file" id="file-input" accept=".zip" style="display:none">
 
     <script>
-        const config = { key: '', endpoint: '' };
-        let files = {};
-        let issues = [];
-        let currentFile = null;
-        let chatHistory = [];
-        let isScanning = false;
+        // 設定與狀態
+        const state = {
+            key: '',
+            endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+            model: 'openrouter/pony-alpha',
+            files: {}, // 存儲檔案內容
+            issues: [], // 存儲掃描到的問題
+            currentFile: null,
+            isScanning: false
+        };
 
+        // --- 初始化系統 ---
         function init() {
-            config.key = document.getElementById('key').value;
-            config.endpoint = document.getElementById('endpoint').value || 'https://api.liquid.ai/v1/chat/completions';
-            if (!config.key) return alert('API Key required');
+            const keyInput = document.getElementById('key').value.trim();
+            if (!keyInput) return alert("Please enter a valid API Key");
+            
+            state.key = keyInput;
+            state.model = document.getElementById('model-select').value;
+            
+            // 同步 Header 下拉選單
+            document.getElementById('header-model').value = state.model;
             document.getElementById('boot').style.display = 'none';
         }
 
-        // ===== 檔案載入 =====
+        function updateModel(val) {
+            state.model = val;
+            addChatMessage('ai', `🔄 Model switched to: <b>${val}</b>`);
+        }
+
+        // --- 檔案處理 (含過濾邏輯) ---
         document.getElementById('file-input').addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
             
             const zip = new JSZip();
-            const content = await zip.loadAsync(file);
-            
-            files = {};
-            issues = [];
-            
-            for (let path in content.files) {
-                if (!content.files[path].dir && isValidFile(path) && !path.includes('node_modules')) {
-                    try {
-                        const text = await content.files[path].async('string');
-                        if (text) files[path] = text;
-                    } catch(e) {}
+            try {
+                const content = await zip.loadAsync(file);
+                state.files = {};
+                state.issues = [];
+                state.currentFile = null;
+                
+                // 🔥 白名單過濾器 (修復 104 檔案問題)
+                const ALLOWED_EXTS = ['.js', '.ts', '.html', '.css', '.json', '.py', '.php', '.java', '.c', '.cpp', '.cs'];
+                
+                for (let path in content.files) {
+                    const entry = content.files[path];
+                    const isDir = entry.dir;
+                    const isMacJunk = path.includes('__MACOSX') || path.includes('.DS_Store');
+                    const isGit = path.includes('.git/');
+                    const ext = '.' + path.split('.').pop().toLowerCase();
+                    
+                    if (!isDir && !isMacJunk && !isGit && ALLOWED_EXTS.includes(ext)) {
+                        const text = await entry.async('string');
+                        // 簡單過濾過大的 minified files (大於 300k 跳過)
+                        if(text.length < 300000) {
+                            state.files[path] = text;
+                        }
+                    }
                 }
+                
+                renderFileList();
+                document.getElementById('scanBtn').style.display = 'block';
+                document.getElementById('status-text').textContent = 'FILES LOADED';
+                addChatMessage('ai', `📂 Loaded ${Object.keys(state.files).length} valid code files.`);
+                
+            } catch(err) {
+                alert("ZIP Error: " + err.message);
             }
-            
-            document.getElementById('file-count').textContent = Object.keys(files).length;
-            document.getElementById('scanBtn').style.display = 'block';
-            
-            renderFileList();
-            addChatMessage('ai', `Loaded ${Object.keys(files).length} files. Click "SCAN ALL" to analyze them.`);
+            e.target.value = ''; // Reset input
         });
-
-        function isValidFile(path) {
-            const ext = path.split('.').pop().toLowerCase();
-            return ['js','ts','jsx','tsx','py','java','go','rs','c','cpp','php','rb'].includes(ext);
-        }
 
         function renderFileList() {
             const list = document.getElementById('files-list');
             list.innerHTML = '';
+            document.getElementById('file-count').textContent = `${Object.keys(state.files).length} files`;
             
-            Object.keys(files).forEach(path => {
-                const item = document.createElement('div');
-                item.className = 'file-item';
-                item.textContent = path.split('/').pop();
-                item.title = path;
-                item.onclick = () => selectFile(path);
-                list.appendChild(item);
+            Object.keys(state.files).sort().forEach(path => {
+                const div = document.createElement('div');
+                div.className = 'file-item';
+                div.id = `file-${btoa(path).replace(/=/g,'')}`; // Safe ID
+                div.textContent = path;
+                div.onclick = () => loadFile(path);
+                list.appendChild(div);
             });
         }
 
-        function selectFile(path) {
-            currentFile = path;
+        function loadFile(path) {
+            state.currentFile = path;
             
+            // UI Highlight
             document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
-            event.target.classList.add('selected');
+            const el = document.getElementById(`file-${btoa(path).replace(/=/g,'')}`);
+            if(el) el.classList.add('selected');
             
-            document.getElementById('current-file').textContent = path;
-            document.getElementById('code-info').textContent = `${files[path].length} chars`;
+            document.getElementById('current-file-name').textContent = path;
+            const code = state.files[path];
+            document.getElementById('code-meta').textContent = `${code.length} chars`;
             
-            renderCode(path, files[path]);
+            renderCodeView(path, code);
         }
 
-        function renderCode(path, code) {
+        function renderCodeView(path, code) {
             const view = document.getElementById('code-view');
             const lines = code.split('\n');
-            const fileIssues = issues.filter(i => i.file === path);
+            const fileIssues = state.issues.filter(i => i.file === path);
             
             let html = '';
-            lines.forEach((line, i) => {
-                const lineNum = i + 1;
-                const lineIssues = fileIssues.filter(issue => issue.line === lineNum);
-                let className = 'line';
+            lines.forEach((line, idx) => {
+                const lineNum = idx + 1;
+                // 檢查該行是否有問題
+                const issue = fileIssues.find(i => i.line === lineNum);
+                let cls = 'line';
+                if(issue) cls += issue.severity === 'critical' ? ' error' : ' warning';
                 
-                if (lineIssues.some(i => i.severity === 'critical' || i.severity === 'high')) {
-                    className += ' error';
-                } else if (lineIssues.length > 0) {
-                    className += ' warning';
-                }
-                
-                html += `<span class="${className}" onclick="askAboutLine('${path}', ${lineNum})">${String(lineNum).padStart(4)}| ${escapeHtml(line)}</span>\n`;
+                // Escape HTML
+                const safeLine = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                html += `<div class="${cls}" data-line="${lineNum}">${String(lineNum).padStart(4, ' ')} | ${safeLine}</div>`;
             });
-            
             view.innerHTML = html;
         }
 
-        // ===== 掃描 =====
+        // --- 核心：AI 掃描功能 ---
         async function startScan() {
-            if (isScanning) return;
-            isScanning = true;
+            if(state.isScanning) return;
+            state.isScanning = true;
             document.getElementById('scanBtn').disabled = true;
-            document.getElementById('scan-status').textContent = 'Scanning...';
+            document.getElementById('status-text').textContent = 'SCANNING...';
+            state.issues = []; // 重置問題
             
-            addChatMessage('ai', '🔍 Starting scan. This may take a moment...');
+            const paths = Object.keys(state.files);
+            let processed = 0;
             
-            const filePaths = Object.keys(files);
-            const allIssues = [];
-            let done = 0;
-            
-            // 並行掃描
-            const promises = filePaths.map(async path => {
-                const fileIssues = await scanFile(path, files[path]);
-                allIssues.push(...fileIssues);
-                done++;
-                document.getElementById('scan-status').textContent = `${done}/${filePaths.length}`;
-                return fileIssues;
-            });
-            
-            await Promise.all(promises);
-            
-            issues = allIssues;
-            document.getElementById('issue-count').textContent = issues.length;
-            
-            renderIssues();
-            
-            // 標記有問題的檔案
-            const problemFiles = new Set(issues.map(i => i.file));
-            document.querySelectorAll('.file-item').forEach(item => {
-                const path = Object.keys(files).find(p => p.split('/').pop() === item.textContent);
-                if (problemFiles.has(path)) {
-                    item.classList.add('has-issue');
-                }
-            });
-            
-            isScanning = false;
+            addChatMessage('ai', `⚡ Starting audit on ${paths.length} files using ${state.model.split('/')[1]}...`);
+
+            // 批次處理以防瀏覽器卡死 (每次併發 3 個)
+            const BATCH_SIZE = 3;
+            for (let i = 0; i < paths.length; i += BATCH_SIZE) {
+                const batch = paths.slice(i, i + BATCH_SIZE);
+                await Promise.all(batch.map(path => scanSingleFile(path)));
+                
+                processed += batch.length;
+                const progress = (processed / paths.length) * 100;
+                document.getElementById('scan-progress-bar').style.width = `${progress}%`;
+            }
+
+            // 完成
+            state.isScanning = false;
             document.getElementById('scanBtn').disabled = false;
-            document.getElementById('scan-status').textContent = 'Done';
+            document.getElementById('status-text').textContent = 'DONE';
+            document.getElementById('scan-progress-bar').style.width = '0%';
             
-            const critical = issues.filter(i => i.severity === 'critical').length;
-            const high = issues.filter(i => i.severity === 'high').length;
-            
-            addChatMessage('ai', `✅ Scan complete!\n\nFound ${issues.length} issues:\n• ${critical} Critical\n• ${high} High\n• ${issues.length - critical - high} Medium/Low\n\nClick on any issue to discuss it with me.`);
+            refreshIssueList();
+            addChatMessage('ai', `✅ Scan Complete. Found ${state.issues.length} issues.`);
         }
 
-        async function scanFile(path, code) {
-            const prompt = `Analyze this code for bugs, errors, and issues.
-
+        async function scanSingleFile(path) {
+            const code = state.files[path];
+            // 截斷過長代碼以節省 Token
+            const snippet = code.length > 20000 ? code.substring(0, 20000) + "\n...[TRUNCATED]" : code;
+            
+            const prompt = `
+Analyze this code for bugs, security risks, and logic errors.
 File: ${path}
 
 \`\`\`
-${code.substring(0, 50000)}
+${snippet}
 \`\`\`
 
-Output JSON only:
+Return ONLY valid JSON in this format:
 {
   "issues": [
     {
       "severity": "critical|high|medium|low",
-      "line": <line number or null>,
-      "type": "bug|security|performance|memory|logic",
-      "title": "<short title>",
-      "description": "<what's wrong>",
-      "suggestion": "<how to fix>"
+      "line": <line_number_integer>,
+      "title": "<short_title>",
+      "description": "<detailed_explanation>"
     }
   ]
-}`;
+}
+If no issues, return {"issues": []}.
+`;
 
             try {
-                const res = await fetch(config.endpoint, {
+                const res = await fetch(state.endpoint, {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${config.key}`,
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Authorization': `Bearer ${state.key}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        model: 'liquid/lfm-40b',
+                        model: state.model,
                         messages: [{ role: 'user', content: prompt }],
-                        max_tokens: 2048
+                        temperature: 0.1 // 低隨機性以獲得穩定 JSON
                     })
                 });
 
-                const data = await res.json();
-                const content = data.choices?.[0]?.message?.content || '';
+                if(!res.ok) throw new Error(res.statusText);
                 
-                const jsonMatch = content.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    const parsed = JSON.parse(jsonMatch[0]);
-                    return (parsed.issues || []).map(i => ({ ...i, file: path }));
+                const data = await res.json();
+                let content = data.choices[0].message.content;
+                
+                // 🔥 JSON 提取修復：處理 Markdown 標記
+                const mdMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/```\n([\s\S]*?)\n```/);
+                if(mdMatch) content = mdMatch[1];
+                
+                // 嘗試提取最外層 {}
+                const jsonStart = content.indexOf('{');
+                const jsonEnd = content.lastIndexOf('}');
+                if(jsonStart !== -1 && jsonEnd !== -1) {
+                    content = content.substring(jsonStart, jsonEnd + 1);
+                    const result = JSON.parse(content);
+                    if(result.issues && Array.isArray(result.issues)) {
+                        result.issues.forEach(issue => {
+                            state.issues.push({ ...issue, file: path });
+                        });
+                    }
                 }
-            } catch (e) {}
-            
-            return [];
+            } catch(e) {
+                console.error(`Scan error ${path}:`, e);
+                // 不中斷流程，只記錄錯誤
+            }
         }
 
-        function renderIssues() {
+        function refreshIssueList() {
             const list = document.getElementById('issues-list');
+            list.innerHTML = '';
             
-            if (issues.length === 0) {
-                list.innerHTML = '<div style="color:var(--accent);text-align:center;padding:30px;">✓ No issues found!</div>';
-                return;
-            }
-            
-            const sorted = [...issues].sort((a, b) => {
-                const order = { critical: 0, high: 1, medium: 2, low: 3 };
-                return order[a.severity] - order[b.severity];
+            // 統計
+            const crit = state.issues.filter(i => i.severity === 'critical').length;
+            const high = state.issues.filter(i => i.severity === 'high').length;
+            document.getElementById('issue-count').textContent = state.issues.length;
+            document.getElementById('stat-crit').textContent = crit;
+            document.getElementById('stat-high').textContent = high;
+
+            // 排序: Critical 先
+            const sorted = [...state.issues].sort((a,b) => {
+                const map = { critical: 0, high: 1, medium: 2, low: 3 };
+                return map[a.severity] - map[b.severity];
+            });
+
+            sorted.forEach(issue => {
+                const card = document.createElement('div');
+                card.className = `issue-card ${issue.severity}`;
+                card.innerHTML = `
+                    <div class="issue-top">
+                        <span class="issue-title">${escapeHtml(issue.title)}</span>
+                        <span class="issue-badge badge-${issue.severity}">${issue.severity}</span>
+                    </div>
+                    <div style="font-size:10px; color:#666; margin-bottom:4px;">
+                        ${issue.file} : Line ${issue.line || '?'}
+                    </div>
+                    <div class="issue-desc">${escapeHtml(issue.description)}</div>
+                `;
+                card.onclick = () => jumpToIssue(issue);
+                list.appendChild(card);
+                
+                // 標記檔案列表
+                const fileEl = document.getElementById(`file-${btoa(issue.file).replace(/=/g,'')}`);
+                if(fileEl) {
+                    fileEl.classList.add('has-issue');
+                    if(issue.severity === 'critical') fileEl.classList.add('has-critical');
+                }
             });
             
-            list.innerHTML = sorted.map((issue, i) => `
-                <div class="issue-card ${issue.severity}" onclick="discussIssue(${i})">
-                    <div class="issue-title">
-                        ${escapeHtml(issue.title)}
-                        <span class="issue-badge badge-${issue.severity}">${issue.severity.toUpperCase()}</span>
-                    </div>
-                    <div class="issue-meta">
-                        ${issue.file.split('/').pop()}${issue.line ? ':' + issue.line : ''} • ${issue.type}
-                    </div>
-                </div>
-            `).join('');
+            if(state.currentFile) renderCodeView(state.currentFile, state.files[state.currentFile]);
         }
 
-        // ===== 對話 =====
-        function addChatMessage(role, content) {
-            const messages = document.getElementById('chat-messages');
-            const div = document.createElement('div');
-            div.className = `message message-${role}`;
-            
-            const formattedContent = content
-                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre>$2</pre>')
-                .replace(/`([^`]+)`/g, '<code style="background:#000;padding:2px 5px;">$1</code>')
-                .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-                .replace(/\n/g, '<br>');
-            
-            div.innerHTML = `<div class="bubble">${formattedContent}</div>`;
-            messages.appendChild(div);
-            messages.scrollTop = messages.scrollHeight;
+        function jumpToIssue(issue) {
+            loadFile(issue.file);
+            // 滾動到行
+            setTimeout(() => {
+                const lineEl = document.querySelector(`.line[data-line="${issue.line}"]`);
+                if(lineEl) lineEl.scrollIntoView({behavior: "smooth", block: "center"});
+            }, 100);
         }
 
+        // --- 核心：對話系統 (含 Streaming 修復) ---
         async function sendMessage() {
             const input = document.getElementById('chat-input');
-            const message = input.value.trim();
-            if (!message) return;
+            const txt = input.value.trim();
+            if(!txt) return;
             
+            addChatMessage('user', txt);
             input.value = '';
-            addChatMessage('user', message);
             
-            document.getElementById('chat-send').disabled = true;
-            
-            // 構建上下文
-            let context = '';
-            if (currentFile) {
-                context = `\n\nCurrent file: ${currentFile}\n\`\`\`\n${files[currentFile].substring(0, 10000)}\n\`\`\``;
+            const sendBtn = document.getElementById('sendBtn');
+            sendBtn.disabled = true;
+            sendBtn.textContent = "THINKING...";
+
+            // 構建 Context
+            let context = "You are Apollo, an expert code auditor.";
+            if(state.currentFile) {
+                const code = state.files[state.currentFile];
+                // 限制 context 大小
+                context += `\n\nUser is looking at file: ${state.currentFile}\nCode:\n\`\`\`\n${code.substring(0, 15000)}\n\`\`\``;
             }
-            
-            const messages = document.getElementById('chat-messages');
-            const typingDiv = document.createElement('div');
-            typingDiv.className = 'message message-ai';
-            typingDiv.innerHTML = '<div class="bubble typing">Apollo is thinking...</div>';
-            messages.appendChild(typingDiv);
-            messages.scrollTop = messages.scrollHeight;
-            
+
+            // 創建 AI 訊息泡泡
+            const msgsDiv = document.getElementById('chat-messages');
+            const aiMsg = document.createElement('div');
+            aiMsg.className = 'message message-ai';
+            aiMsg.innerHTML = `<div class="bubble typing">...</div>`;
+            msgsDiv.appendChild(aiMsg);
+            msgsDiv.scrollTop = msgsDiv.scrollHeight;
+
             try {
-                const res = await fetch(config.endpoint, {
+                const res = await fetch(state.endpoint, {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${config.key}`,
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Authorization': `Bearer ${state.key}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        model: 'liquid/lfm-40b',
+                        model: state.model,
                         messages: [
-                            { role: 'system', content: 'You are Apollo, a helpful code auditor. Answer questions about code clearly and concisely.' + context },
-                            { role: 'user', content: message }
+                            { role: 'system', content: context },
+                            { role: 'user', content: txt }
                         ],
                         stream: true
                     })
                 });
 
+                if(!res.ok) throw new Error(`API Error: ${res.status}`);
+
+                // 🔥 Streaming Fix V2 (Buffer Logic)
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
-                let response = '';
+                let buffer = ''; 
+                let fullText = '';
+                const bubble = aiMsg.querySelector('.bubble');
+                bubble.classList.remove('typing');
+                bubble.innerHTML = '';
 
-                typingDiv.querySelector('.bubble').classList.remove('typing');
-                typingDiv.querySelector('.bubble').innerHTML = '';
-
-                while (true) {
+                while(true) {
                     const { done, value } = await reader.read();
                     if (done) break;
                     
-                    const chunk = decoder.decode(value);
-                    const lines = chunk.split('\n');
-                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // 保留不完整的結尾
+
                     for (const line of lines) {
                         if (line.startsWith('data: ')) {
-                            const data = line.slice(6).trim();
-                            if (data === '[DONE]') continue;
+                            const jsonStr = line.slice(6).trim();
+                            if (jsonStr === '[DONE]') continue;
                             try {
-                                const json = JSON.parse(data);
-                                const word = json.choices?.[0]?.delta?.content || '';
-                                response += word;
-                                
-                                const formatted = response
-                                    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre>$2</pre>')
-                                    .replace(/`([^`]+)`/g, '<code style="background:#000;padding:2px 5px;">$1</code>')
-                                    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-                                    .replace(/\n/g, '<br>');
-                                
-                                typingDiv.querySelector('.bubble').innerHTML = formatted;
-                                messages.scrollTop = messages.scrollHeight;
-                            } catch (e) {}
+                                const json = JSON.parse(jsonStr);
+                                const chunk = json.choices[0]?.delta?.content || "";
+                                fullText += chunk;
+                                bubble.innerHTML = markedSimple(fullText);
+                                msgsDiv.scrollTop = msgsDiv.scrollHeight;
+                            } catch(e) {}
                         }
                     }
                 }
-            } catch (e) {
-                typingDiv.querySelector('.bubble').innerHTML = `<span style="color:var(--err)">Error: ${e.message}</span>`;
+
+            } catch(e) {
+                aiMsg.querySelector('.bubble').innerHTML = `<span style="color:var(--err)">Connection Error: ${e.message}</span>`;
             }
-            
-            document.getElementById('chat-send').disabled = false;
+
+            sendBtn.disabled = false;
+            sendBtn.textContent = "SEND MESSAGE";
+        }
+
+        // 簡易 Markdown 渲染器
+        function markedSimple(text) {
+            return text
+                .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+                .replace(/\n/g, '<br>');
+        }
+
+        function addChatMessage(role, text) {
+            const div = document.createElement('div');
+            div.className = `message message-${role}`;
+            div.innerHTML = `<div class="bubble">${markedSimple(text)}</div>`;
+            document.getElementById('chat-messages').appendChild(div);
+            document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
         }
 
         function quickAsk(type) {
-            const prompts = {
-                explain: 'Explain what this code does and how it works:',
-                fix: 'What are the bugs in this code and how do I fix them?',
-                security: 'Are there any security vulnerabilities in this code?',
-                optimize: 'How can I optimize this code for better performance?'
+            const map = {
+                explain: "Explain exactly what this file does and how it works.",
+                fix: "Analyze this file for any bugs or potential issues.",
+                refactor: "Suggest how to refactor this code to be cleaner and faster."
             };
-            
-            document.getElementById('chat-input').value = prompts[type];
+            const input = document.getElementById('chat-input');
+            input.value = map[type];
             sendMessage();
         }
-
-        function discussIssue(index) {
-            const issue = issues[index];
-            if (!issue) return;
-            
-            // 跳到該檔案
-            if (issue.file !== currentFile) {
-                selectFile(issue.file);
-            }
-            
-            // 跳到該行
-            if (issue.line) {
-                const codeView = document.getElementById('code-view');
-                const lines = codeView.querySelectorAll('.line');
-                if (lines[issue.line - 1]) {
-                    lines[issue.line - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-            }
-            
-            // 在對話框討論
-            document.getElementById('chat-input').value = `Tell me more about this issue:\n"${issue.title}"\n\n${issue.description}`;
-            sendMessage();
-        }
-
-        function askAboutLine(path, lineNum) {
-            const code = files[path].split('\n')[lineNum - 1];
-            document.getElementById('chat-input').value = `What's wrong with line ${lineNum}?\n\`\`\`\n${code}\n\`\`\``;
+        
+        function clearChat() {
+            document.getElementById('chat-messages').innerHTML = '';
+            addChatMessage('ai', 'Chat cleared. Ready for new questions.');
         }
 
         function escapeHtml(str) {
-            if (!str) return '';
-            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            if(!str) return '';
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
-
-        // Enter 鍵發送
+        
+        // Enter 鍵監聽
         document.getElementById('chat-input').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if(e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
             }
         });
+
     </script>
 </body>
 </html>
