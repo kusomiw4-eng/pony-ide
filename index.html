@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pony IDE (Data Monitor)</title>
+    <title>Pony IDE (Free Mode)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs/loader.min.js"></script>
     <style>
@@ -37,9 +37,13 @@
         #input-area { padding: 10px; background: #252526; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-top: 1px solid #333; }
         #prompt-input { flex: 1; background: #3c3c3c; border: 1px solid #555; color: white; padding: 10px; border-radius: 20px; outline: none; }
         
-        /* 數據監控條 */
-        #data-monitor { width: 100%; font-size: 11px; color: #888; padding: 0 10px 5px 10px; display: flex; justify-content: space-between; }
-        .monitor-val { color: #4cd964; font-weight: bold; }
+        /* 狀態顯示優化 */
+        #status-text { font-size: 12px; font-weight: bold; padding: 4px 8px; border-radius: 4px; background: #444; color: #aaa; transition: 0.3s; }
+        #status-text.loaded { background: #1e4620; color: #4cd964; }
+        
+        #data-monitor { width: 100%; font-size: 11px; color: #666; padding: 0 10px 5px 10px; display: flex; justify-content: space-between; }
+        .monitor-val { color: #888; font-weight: bold; }
+        .monitor-val.active { color: #4cd964; }
 
         #modelSelect { background: #333; color: #fff; border: 1px solid #444; padding: 8px; border-radius: 4px; font-size: 12px; }
 
@@ -63,7 +67,7 @@
 
     <header>
         <button class="btn" style="background:#444" onclick="toggleSidebar()">☰ 檔案</button>
-        <span id="status-text" style="color:#aaa; font-size:12px;">等待 ZIP...</span>
+        <span id="status-text">🔴 未載入專案</span>
         <button class="btn btn-green" onclick="exportZip()">💾 匯出 ZIP</button>
     </header>
 
@@ -78,8 +82,8 @@
         <div id="editor-container">
             <div class="center-screen" id="welcome-screen">
                 <div style="font-size:50px; margin-bottom:10px;">📂</div>
-                <p>請載入專案以進行全局分析</p>
-                <button class="big-btn" onclick="triggerUpload()">+ 載入 ZIP 檔案</button>
+                <p>目前無檔案</p>
+                <button class="big-btn" onclick="triggerUpload()">+ 載入 ZIP</button>
             </div>
         </div>
     </div>
@@ -88,13 +92,13 @@
 
     <div id="ai-drawer">
         <div class="drawer-header" onclick="toggleAI()">
-            <span>🤖 AI 分析助手</span> <span>⬇</span>
+            <span>🤖 AI 助手</span> <span>⬇</span>
         </div>
         <div id="chat-log"></div>
         
         <div id="data-monitor">
-            <span>檔案數: <span id="monitor-files" class="monitor-val">0</span></span>
-            <span>總字數: <span id="monitor-chars" class="monitor-val">0</span> (約 <span id="monitor-tokens" class="monitor-val">0</span> tokens)</span>
+            <span>檔案狀態: <span id="monitor-files" class="monitor-val">0</span> 個</span>
+            <span>發送字數: <span id="monitor-chars" class="monitor-val">0</span></span>
         </div>
 
         <div id="input-area">
@@ -102,7 +106,7 @@
                 <option value="moonshot/moonshot-v1-128k" selected>Kimi 2.5 (128k)</option>
                 <option value="openrouter/pony-alpha">Pony Alpha</option>
             </select>
-            <input type="text" id="prompt-input" placeholder="問問題 (例如: 分析架構)...">
+            <input type="text" id="prompt-input" placeholder="輸入訊息...">
             <button class="btn" onclick="askAI()">發送</button>
         </div>
     </div>
@@ -139,7 +143,6 @@
                 let firstFile = null;
 
                 for(let path in content.files) {
-                    // 放寬過濾條件，只要不是資料夾且不含 MACOSX 垃圾檔就讀取
                     if(!content.files[path].dir && !path.includes("__MACOSX") && !path.includes(".DS_Store")) {
                         try {
                             const text = await content.files[path].async("string");
@@ -153,32 +156,40 @@
                             
                             if(!firstFile) firstFile = {path, div};
                             fileCount++;
-                        } catch(err) {
-                            console.log("Skipping binary or err file: " + path);
-                        }
+                        } catch(err) { console.log("Skipped: " + path); }
                     }
                 }
                 
-                // 更新 UI 與監控數據
+                // 更新狀態顯示
                 document.getElementById('welcome-screen').style.display = 'none';
-                document.getElementById('status-text').innerText = `✅ 已載入 ${fileCount} 檔`;
-                updateMonitor(fileCount, totalChars);
                 
+                const statusEl = document.getElementById('status-text');
+                statusEl.innerText = `🟢 已載入 (${fileCount}檔)`;
+                statusEl.classList.add('loaded');
+
+                updateMonitor(fileCount, totalChars);
                 initEditor(firstFile);
                 
-                const log = document.getElementById('chat-log');
-                log.innerHTML = `<div class="msg-ai">✅ 成功讀取 ${fileCount} 個檔案。\n總代碼量：${totalChars} 字 (約 ${Math.round(totalChars/3.5)} tokens)。\n\n現在你可以問我問題了，我會看得到代碼！</div>`;
-                toggleAI();
+                // 這次不自動彈出 AI 視窗，讓介面清爽一點
+                // 也不會發送系統訊息，保持安靜
 
-            } catch(e) { alert("ZIP 讀取失敗: " + e); }
+            } catch(e) { alert("ZIP 錯誤: " + e); }
             fileInput.value = '';
         }
 
         function updateMonitor(count, chars) {
-            document.getElementById('monitor-files').innerText = count;
-            document.getElementById('monitor-chars').innerText = chars;
-            // 粗略估計 token (1 token 約 3.5~4 chars)
-            document.getElementById('monitor-tokens').innerText = Math.round(chars / 3.5);
+            const fEl = document.getElementById('monitor-files');
+            const cEl = document.getElementById('monitor-chars');
+            fEl.innerText = count;
+            cEl.innerText = chars;
+            
+            if(count > 0) {
+                fEl.classList.add('active');
+                cEl.classList.add('active');
+            } else {
+                fEl.classList.remove('active');
+                cEl.classList.remove('active');
+            }
         }
 
         function initEditor(firstFile) {
@@ -191,7 +202,6 @@
                     editor.onDidChangeModelContent(() => { 
                         if(activePath) {
                             files[activePath] = editor.getValue();
-                            // 重新計算總字數
                             let total = 0;
                             for(let f in files) total += files[f].length;
                             updateMonitor(Object.keys(files).length, total);
@@ -220,23 +230,25 @@
             const txt = input.value;
             if(!txt) return;
 
-            // 防呆檢查
+            // ⚠️ 這裡移除了擋路石，不管有沒有檔案都讓你發送
             const fileCount = Object.keys(files).length;
-            if (fileCount === 0) {
-                alert("⚠️ 請先載入 ZIP 檔案！\n\n目前 IDE 裡沒有任何代碼，傳送空訊息給 AI 會浪費你的錢。\n請點擊中間或上方的 + 按鈕載入。");
-                return;
-            }
-
-            log.innerHTML += `<div style="text-align:right; color:#9cdcfe; font-weight:bold; margin-bottom:5px;">YOU: ${txt}</div><div id="thinking" style="color:#aaa;">正在發送 ${fileCount} 個檔案給 ${model}...</div>`;
+            
+            log.innerHTML += `<div style="text-align:right; color:#9cdcfe; font-weight:bold; margin-bottom:5px;">YOU: ${txt}</div><div id="thinking" style="color:#aaa;">Sending... (Context: ${fileCount} files)</div>`;
             log.scrollTop = log.scrollHeight;
             input.value = "";
 
-            // 全局讀取邏輯
-            let fullProjectContext = `【Project Context (Files: ${fileCount})】:\n`;
-            for (let path in files) {
-                fullProjectContext += `\n--- FILE START: ${path} ---\n${files[path]}\n--- FILE END ---\n`;
+            let context = "";
+            if (fileCount > 0) {
+                // 有檔案就拼接
+                let fullProjectContext = `【Project Context】:\n`;
+                for (let path in files) {
+                    fullProjectContext += `\n--- FILE: ${path} ---\n${files[path]}\n`;
+                }
+                context = `${fullProjectContext}\n\n【Question】: ${txt}`;
+            } else {
+                // 沒檔案就只傳對話
+                context = txt;
             }
-            const context = `${fullProjectContext}\n\n【User Question】: ${txt}`;
 
             try {
                 const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -264,7 +276,7 @@
             for(let path in files) zip.file(path, files[path]);
             zip.generateAsync({type:"blob"}).then(blob => {
                 const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob); a.download = "kimi_edited_project.zip"; a.click();
+                a.href = URL.createObjectURL(blob); a.download = "project_export.zip"; a.click();
             });
         }
 
