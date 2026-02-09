@@ -2,164 +2,168 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Apollo IDE - Multi-Round Audit</title>
+    <title>Apollo IDE - Interactive Audit</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root { --bg: #000; --accent: #00ff41; --text: #00ff41; --err: #ff3333; --warn: #ffaa00; }
         * { box-sizing: border-box; }
         body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; height: 100vh; display: flex; flex-direction: column; }
         
-        header { height: 50px; background: #0a0a0a; border-bottom: 1px solid #333; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; }
+        header { height: 45px; background: #0a0a0a; border-bottom: 1px solid #333; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; }
         .logo { font-size: 14px; font-weight: bold; }
         
         #main { flex: 1; display: flex; overflow: hidden; }
         
-        /* 左側：掃描進度 */
-        #progress-panel { width: 280px; background: #0a0a0a; border-right: 1px solid #333; display: flex; flex-direction: column; }
-        #round-tabs { display: flex; border-bottom: 1px solid #333; }
-        .round-tab { flex: 1; padding: 10px 5px; text-align: center; font-size: 10px; cursor: pointer; border-bottom: 2px solid transparent; }
-        .round-tab.active { border-bottom-color: var(--accent); color: #fff; }
-        .round-tab.done { color: var(--accent); }
-        .round-tab.running { animation: pulse 1s infinite; }
+        /* 左側：檔案列表 */
+        #files-panel { width: 220px; background: #0a0a0a; border-right: 1px solid #333; display: flex; flex-direction: column; }
+        #files-header { padding: 10px; border-bottom: 1px solid #333; font-size: 11px; color: #666; }
+        #files-list { flex: 1; overflow-y: auto; }
+        .file-item { padding: 8px 10px; font-size: 11px; border-bottom: 1px solid #222; cursor: pointer; }
+        .file-item:hover { background: #111; }
+        .file-item.selected { background: #1a1a1a; border-left: 2px solid var(--accent); }
+        .file-item.has-issue { color: var(--warn); }
         
-        #file-list { flex: 1; overflow-y: auto; padding: 10px; }
-        .file-item { padding: 6px 8px; font-size: 10px; border-bottom: 1px solid #222; display: flex; justify-content: space-between; }
-        .file-item.pending { opacity: 0.4; }
-        .file-item.scanning { background: #111; border-left: 2px solid var(--accent); }
-        .file-item.done { opacity: 0.6; }
-        .file-item.has-issue { border-left-color: var(--err); }
-        .issue-badge { background: var(--err); color: #000; padding: 1px 5px; border-radius: 3px; font-size: 9px; }
+        /* 中間：主區域 */
+        #center-panel { flex: 1; display: flex; flex-direction: column; }
         
-        /* 中間：報告 */
-        #report-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        #report-header { padding: 10px 15px; background: #0a0a0a; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
-        #report-body { flex: 1; overflow-y: auto; padding: 15px; }
+        /* 上半：代碼區 */
+        #code-section { height: 45%; display: flex; flex-direction: column; border-bottom: 1px solid #333; }
+        #code-header { padding: 8px 12px; background: #0a0a0a; border-bottom: 1px solid #222; font-size: 11px; display: flex; justify-content: space-between; }
+        #code-view { flex: 1; overflow: auto; padding: 12px; font-size: 12px; line-height: 1.7; white-space: pre; }
+        #code-view .line { display: block; }
+        #code-view .line:hover { background: #111; }
+        #code-view .line.error { background: #1a0000; border-left: 2px solid var(--err); }
+        #code-view .line.warning { background: #1a1a00; border-left: 2px solid var(--warn); }
         
-        .report-section { margin-bottom: 25px; }
-        .section-title { font-size: 12px; color: #666; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #333; }
+        /* 下半：問題列表 */
+        #issues-section { height: 55%; display: flex; flex-direction: column; }
+        #issues-header { padding: 8px 12px; background: #0a0a0a; border-bottom: 1px solid #222; font-size: 11px; display: flex; justify-content: space-between; }
+        #issues-list { flex: 1; overflow-y: auto; padding: 10px; }
         
-        .issue-card { background: #0a0a0a; border: 1px solid #333; padding: 12px; margin-bottom: 10px; border-radius: 4px; }
+        .issue-card { background: #0a0a0a; border: 1px solid #333; padding: 10px; margin-bottom: 8px; cursor: pointer; }
+        .issue-card:hover { border-color: var(--accent); }
         .issue-card.critical { border-left: 3px solid var(--err); }
         .issue-card.high { border-left: 3px solid #ff6600; }
         .issue-card.medium { border-left: 3px solid var(--warn); }
-        .issue-card.low { border-left: 3px solid #666; }
+        .issue-card.low { border-left: 3px solid #555; }
+        .issue-title { font-size: 11px; color: #fff; margin-bottom: 5px; }
+        .issue-meta { font-size: 10px; color: #666; }
+        .issue-badge { font-size: 9px; padding: 2px 6px; border-radius: 3px; margin-left: 8px; }
+        .badge-critical { background: #331111; color: var(--err); }
+        .badge-high { background: #332200; color: #ff6600; }
+        .badge-medium { background: #332200; color: var(--warn); }
+        .badge-low { background: #222; color: #888; }
         
-        .issue-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
-        .issue-file { font-size: 11px; color: #888; }
-        .issue-type { font-size: 10px; padding: 2px 8px; border-radius: 3px; }
-        .type-syntax { background: #331133; color: #ff66ff; }
-        .type-logic { background: #331111; color: var(--err); }
-        .type-memory { background: #113311; color: #66ff66; }
-        .type-security { background: #333311; color: #ffff66; }
-        .type-perf { background: #112233; color: #6699ff; }
+        /* 右側：AI 對話框 */
+        #chat-panel { width: 380px; background: #0a0a0a; border-left: 1px solid #333; display: flex; flex-direction: column; }
+        #chat-header { padding: 10px 12px; border-bottom: 1px solid #333; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+        #chat-messages { flex: 1; overflow-y: auto; padding: 12px; }
         
-        .issue-desc { font-size: 12px; line-height: 1.5; margin-bottom: 8px; }
-        .issue-code { background: #000; padding: 10px; font-size: 11px; overflow-x: auto; border: 1px solid #222; }
-        .issue-fix { margin-top: 10px; padding: 10px; background: #0f1a0f; border: 1px solid #1a331a; font-size: 11px; }
+        .message { margin-bottom: 15px; }
+        .message-user { text-align: right; }
+        .message-user .bubble { background: #1a3a1a; display: inline-block; padding: 8px 12px; border-radius: 8px; max-width: 90%; text-align: left; font-size: 12px; }
+        .message-ai .bubble { background: #111; padding: 10px 12px; border-radius: 8px; font-size: 12px; line-height: 1.6; }
+        .message-ai .bubble pre { background: #000; padding: 8px; margin: 8px 0; overflow-x: auto; font-size: 11px; }
         
-        /* 右側：統計 */
-        #stats-panel { width: 250px; background: #0a0a0a; border-left: 1px solid #333; padding: 15px; }
-        .stat-card { background: #111; padding: 12px; margin-bottom: 10px; border: 1px solid #333; }
-        .stat-label { font-size: 10px; color: #666; margin-bottom: 5px; }
-        .stat-value { font-size: 20px; font-weight: bold; }
+        #chat-input-area { padding: 10px; border-top: 1px solid #333; }
+        #chat-input { width: 100%; background: #111; border: 1px solid #333; color: #fff; padding: 10px; font-family: monospace; font-size: 12px; resize: none; height: 60px; }
+        #chat-input:focus { outline: none; border-color: var(--accent); }
+        #chat-send { margin-top: 8px; background: var(--accent); color: #000; border: none; padding: 8px 16px; cursor: pointer; font-weight: bold; font-size: 11px; }
+        #chat-send:disabled { background: #333; color: #666; }
         
-        .progress-bar { height: 4px; background: #222; margin-top: 8px; }
-        .progress-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+        .quick-actions { margin-bottom: 10px; }
+        .quick-btn { background: #111; border: 1px solid #333; color: #888; padding: 5px 10px; font-size: 10px; cursor: pointer; margin-right: 5px; margin-bottom: 5px; }
+        .quick-btn:hover { border-color: var(--accent); color: var(--accent); }
         
         /* 啟動 */
         #boot { position: fixed; inset: 0; background: rgba(0,0,0,0.98); display: flex; justify-content: center; align-items: center; flex-direction: column; z-index: 999; }
         .boot-title { font-size: 24px; margin-bottom: 10px; }
         .boot-desc { color: #666; margin-bottom: 30px; font-size: 12px; }
-        input { background: #111; border: 1px solid #333; color: #fff; padding: 10px; width: 280px; margin: 5px; text-align: center; }
+        input[type="text"], input[type="password"] { background: #111; border: 1px solid #333; color: #fff; padding: 10px; width: 280px; margin: 5px; text-align: center; }
         button { background: var(--accent); color: #000; border: none; padding: 10px 25px; margin-top: 10px; cursor: pointer; font-weight: bold; }
-        button:disabled { background: #333; color: #666; cursor: not-allowed; }
+        button:disabled { background: #333; color: #666; }
         
         #file-input { display: none; }
         
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        
-        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-thumb { background: #333; }
+        
+        .typing { color: #666; font-style: italic; }
     </style>
 </head>
 <body>
 
     <div id="boot">
-        <div class="boot-title">⬡ APOLLO MULTI-ROUND AUDIT</div>
-        <div class="boot-desc">5-Round Deep Scan • Zero False Negatives</div>
+        <div class="boot-title">⬡ APOLLO AUDIT</div>
+        <div class="boot-desc">Interactive Code Analysis with AI Chat</div>
         <input type="text" id="endpoint" placeholder="API Endpoint">
         <input type="password" id="key" placeholder="API Key">
-        <button onclick="init()">START SYSTEM</button>
+        <button onclick="init()">START</button>
     </div>
 
     <header>
-        <div class="logo">APOLLO_AUDIT // 5-ROUND DEEP SCAN</div>
+        <div class="logo">APOLLO_AUDIT // INTERACTIVE</div>
         <div style="display:flex;gap:15px;align-items:center;font-size:11px;">
-            <span id="header-status">READY</span>
-            <span id="header-round"></span>
-            <button id="uploadBtn" onclick="document.getElementById('file-input').click()">LOAD ZIP</button>
-            <button id="startBtn" onclick="startAllRounds()" style="display:none">START SCAN</button>
+            <span id="status">READY</span>
+            <button onclick="document.getElementById('file-input').click()">LOAD ZIP</button>
+            <button id="scanBtn" onclick="startScan()" style="display:none">SCAN ALL</button>
         </div>
     </header>
 
     <div id="main">
-        <div id="progress-panel">
-            <div id="round-tabs">
-                <div class="round-tab" data-round="1">R1<br>SYNTAX</div>
-                <div class="round-tab" data-round="2">R2<br>LOGIC</div>
-                <div class="round-tab" data-round="3">R3<br>MEMORY</div>
-                <div class="round-tab" data-round="4">R4<br>SECURITY</div>
-                <div class="round-tab" data-round="5">R5<br>PERF</div>
-            </div>
-            <div id="file-list">
-                <div style="color:#666;text-align:center;padding:20px;font-size:11px;">Load ZIP to begin</div>
-            </div>
+        <div id="files-panel">
+            <div id="files-header">FILES (<span id="file-count">0</span>)</div>
+            <div id="files-list"></div>
         </div>
         
-        <div id="report-panel">
-            <div id="report-header">
-                <span id="report-title">SCAN REPORT</span>
-                <span id="report-count"></span>
+        <div id="center-panel">
+            <div id="code-section">
+                <div id="code-header">
+                    <span id="current-file">No file selected</span>
+                    <span id="code-info"></span>
+                </div>
+                <div id="code-view">// Select a file to view code
+// Click on issues to jump to line
+// Chat with AI on the right panel</div>
             </div>
-            <div id="report-body">
-                <div style="color:#666;text-align:center;margin-top:100px;">
-                    <div style="font-size:48px;margin-bottom:20px;">⬡</div>
-                    Multi-Round Audit System<br><br>
-                    <span style="font-size:11px;">Round 1: Syntax errors, unused vars, imports</span><br>
-                    <span style="font-size:11px;">Round 2: Logic bugs, race conditions</span><br>
-                    <span style="font-size:11px;">Round 3: Memory leaks, resource issues</span><br>
-                    <span style="font-size:11px;">Round 4: Security vulnerabilities</span><br>
-                    <span style="font-size:11px;">Round 5: Performance bottlenecks</span>
+            
+            <div id="issues-section">
+                <div id="issues-header">
+                    <span>ISSUES (<span id="issue-count">0</span>)</span>
+                    <span id="scan-status"></span>
+                </div>
+                <div id="issues-list">
+                    <div style="color:#666;text-align:center;padding:30px;font-size:11px;">Load ZIP and scan to find issues</div>
                 </div>
             </div>
         </div>
         
-        <div id="stats-panel">
-            <div class="stat-card">
-                <div class="stat-label">TOTAL FILES</div>
-                <div class="stat-value" id="stat-total">0</div>
+        <div id="chat-panel">
+            <div id="chat-header">
+                <span>💬 CHAT WITH APOLLO</span>
+                <span style="font-size:10px;color:#666">Ask anything</span>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">OVERALL PROGRESS</div>
-                <div class="stat-value" id="stat-progress">0%</div>
-                <div class="progress-bar"><div class="progress-fill" id="progress-bar" style="width:0%"></div></div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">ISSUES FOUND</div>
-                <div class="stat-value" id="stat-issues">0</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">BY SEVERITY</div>
-                <div style="font-size:11px;margin-top:10px;">
-                    <div style="color:var(--err)">● Critical: <span id="stat-crit">0</span></div>
-                    <div style="color:#ff6600">● High: <span id="stat-high">0</span></div>
-                    <div style="color:var(--warn)">● Medium: <span id="stat-med">0</span></div>
-                    <div style="color:#666">● Low: <span id="stat-low">0</span></div>
+            <div id="chat-messages">
+                <div class="message message-ai">
+                    <div class="bubble">
+                        👋 Hi! I'm Apollo. Load your code and I'll help you find bugs.<br><br>
+                        You can ask me:<br>
+                        • "Explain this function"<br>
+                        • "Why is this code wrong?"<br>
+                        • "How do I fix this?"<br>
+                        • "Review this file for security issues"
+                    </div>
                 </div>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">CURRENT ROUND</div>
-                <div class="stat-value" id="stat-round">-</div>
+            <div id="chat-input-area">
+                <div class="quick-actions">
+                    <button class="quick-btn" onclick="quickAsk('explain')">Explain this</button>
+                    <button class="quick-btn" onclick="quickAsk('fix')">How to fix?</button>
+                    <button class="quick-btn" onclick="quickAsk('security')">Security?</button>
+                    <button class="quick-btn" onclick="quickAsk('optimize')">Optimize</button>
+                </div>
+                <textarea id="chat-input" placeholder="Ask Apollo about your code..."></textarea>
+                <button id="chat-send" onclick="sendMessage()">SEND</button>
             </div>
         </div>
     </div>
@@ -169,64 +173,10 @@
     <script>
         const config = { key: '', endpoint: '' };
         let files = {};
-        let allIssues = [];
-        let currentRound = 0;
-        let scanState = { total: 0, done: 0 };
-        let abortScan = false;
-
-        // ===== 5 輪掃描的 Prompt =====
-        const ROUND_PROMPTS = {
-            1: `Round 1 - SYNTAX & STRUCTURE ANALYSIS
-Check for:
-- Syntax errors (missing semicolons, brackets, parentheses)
-- Unused variables, functions, imports
-- Missing imports or undefined references
-- Type mismatches
-- Invalid function signatures
-Output ONLY real issues. Skip style suggestions.`,
-
-            2: `Round 2 - LOGIC ANALYSIS
-Check for:
-- Off-by-one errors
-- Incorrect conditionals (wrong operators, missing cases)
-- Race conditions in async code
-- Dead code (unreachable statements)
-- Incorrect loop logic
-- Null/undefined access risks
-Output ONLY real issues with specific line references.`,
-
-            3: `Round 3 - MEMORY & RESOURCE ANALYSIS
-Check for:
-- Memory leaks (unreleased closures, event listeners)
-- Unclosed connections, files, streams
-- Circular references
-- Cache without expiration
-- Large object accumulation
-- Missing cleanup in useEffect/componentWillUnmount
-Output ONLY real issues.`,
-
-            4: `Round 4 - SECURITY ANALYSIS
-Check for:
-- XSS vulnerabilities (innerHTML, dangerouslySetInnerHTML)
-- SQL/NoSQL injection risks
-- Hardcoded secrets (API keys, passwords)
-- Insecure deserialization
-- Missing input validation
-- CSRF risks
-- eval() and dynamic code execution
-Output ONLY real security issues.`,
-
-            5: `Round 5 - PERFORMANCE ANALYSIS
-Check for:
-- O(n²) or worse algorithms
-- Unnecessary re-renders (React)
-- Large bundle imports
-- Blocking synchronous operations
-- Inefficient DOM manipulation
-- Memory-heavy operations in loops
-- Missing debounce/throttle
-Output ONLY real performance issues.`
-        };
+        let issues = [];
+        let currentFile = null;
+        let chatHistory = [];
+        let isScanning = false;
 
         function init() {
             config.key = document.getElementById('key').value;
@@ -235,6 +185,7 @@ Output ONLY real performance issues.`
             document.getElementById('boot').style.display = 'none';
         }
 
+        // ===== 檔案載入 =====
         document.getElementById('file-input').addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -243,311 +194,353 @@ Output ONLY real performance issues.`
             const content = await zip.loadAsync(file);
             
             files = {};
-            allIssues = [];
+            issues = [];
             
             for (let path in content.files) {
                 if (!content.files[path].dir && isValidFile(path) && !path.includes('node_modules')) {
                     try {
                         const text = await content.files[path].async('string');
-                        if (text && text.length > 0) {
-                            files[path] = text;
-                        }
+                        if (text) files[path] = text;
                     } catch(e) {}
                 }
             }
             
-            const total = Object.keys(files).length;
-            document.getElementById('stat-total').textContent = total;
-            document.getElementById('startBtn').style.display = 'block';
-            document.getElementById('header-status').textContent = `${total} files loaded`;
+            document.getElementById('file-count').textContent = Object.keys(files).length;
+            document.getElementById('scanBtn').style.display = 'block';
             
             renderFileList();
+            addChatMessage('ai', `Loaded ${Object.keys(files).length} files. Click "SCAN ALL" to analyze them.`);
         });
 
         function isValidFile(path) {
             const ext = path.split('.').pop().toLowerCase();
-            return ['js','ts','jsx','tsx','py','java','go','rs','c','cpp','php','rb','swift','kt'].includes(ext);
+            return ['js','ts','jsx','tsx','py','java','go','rs','c','cpp','php','rb'].includes(ext);
         }
 
         function renderFileList() {
-            const list = document.getElementById('file-list');
+            const list = document.getElementById('files-list');
             list.innerHTML = '';
             
             Object.keys(files).forEach(path => {
                 const item = document.createElement('div');
-                item.className = 'file-item pending';
-                item.id = 'file-' + hashPath(path);
-                item.innerHTML = `
-                    <span style="overflow:hidden;text-overflow:ellipsis">${path.split('/').pop()}</span>
-                    <span class="file-status">-</span>
-                `;
+                item.className = 'file-item';
+                item.textContent = path.split('/').pop();
+                item.title = path;
+                item.onclick = () => selectFile(path);
                 list.appendChild(item);
             });
         }
 
-        function hashPath(path) {
-            let hash = 0;
-            for (let i = 0; i < path.length; i++) {
-                hash = ((hash << 5) - hash) + path.charCodeAt(i);
-                hash |= 0;
-            }
-            return Math.abs(hash);
+        function selectFile(path) {
+            currentFile = path;
+            
+            document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
+            event.target.classList.add('selected');
+            
+            document.getElementById('current-file').textContent = path;
+            document.getElementById('code-info').textContent = `${files[path].length} chars`;
+            
+            renderCode(path, files[path]);
         }
 
-        // ===== 多輪掃描主控制 =====
-        async function startAllRounds() {
-            document.getElementById('startBtn').disabled = true;
-            document.getElementById('uploadBtn').disabled = true;
-            abortScan = false;
-            allIssues = [];
+        function renderCode(path, code) {
+            const view = document.getElementById('code-view');
+            const lines = code.split('\n');
+            const fileIssues = issues.filter(i => i.file === path);
             
-            const totalRounds = 5;
-            const filePaths = Object.keys(files);
-            
-            for (let round = 1; round <= totalRounds; round++) {
-                if (abortScan) break;
+            let html = '';
+            lines.forEach((line, i) => {
+                const lineNum = i + 1;
+                const lineIssues = fileIssues.filter(issue => issue.line === lineNum);
+                let className = 'line';
                 
-                currentRound = round;
-                document.getElementById('stat-round').textContent = `Round ${round}`;
-                document.getElementById('header-round').textContent = `Round ${round}/5`;
-                
-                // 更新 tab 狀態
-                document.querySelectorAll('.round-tab').forEach(tab => {
-                    tab.classList.remove('active', 'running');
-                    if (parseInt(tab.dataset.round) === round) {
-                        tab.classList.add('active', 'running');
-                    } else if (parseInt(tab.dataset.round) < round) {
-                        tab.classList.add('done');
-                    }
-                });
-                
-                // 並行處理這一輪的所有檔案
-                scanState = { total: filePaths.length, done: 0 };
-                
-                const promises = filePaths.map(path => scanFileRound(path, round));
-                await Promise.all(promises);
-                
-                // 標記這輪完成
-                document.querySelector(`.round-tab[data-round="${round}"]`).classList.remove('running');
-                document.querySelector(`.round-tab[data-round="${round}"]`).classList.add('done');
-            }
-            
-            // 完成
-            document.getElementById('header-status').textContent = 'SCAN COMPLETE';
-            document.getElementById('header-round').textContent = '';
-            document.getElementById('stat-round').textContent = 'DONE';
-            document.getElementById('startBtn').disabled = false;
-            document.getElementById('uploadBtn').disabled = false;
-            
-            renderFinalReport();
-        }
-
-        async function scanFileRound(path, round) {
-            // 限制並發
-            while (scanState.done - scanState.total + MAX_CONCURRENT > 0) {
-                await sleep(50);
-            }
-            
-            const fileEl = document.getElementById('file-' + hashPath(path));
-            if (fileEl) {
-                fileEl.classList.remove('pending');
-                fileEl.classList.add('scanning');
-                fileEl.querySelector('.file-status').textContent = `R${round}`;
-            }
-            
-            const code = files[path];
-            const prompt = ROUND_PROMPTS[round];
-            
-            try {
-                const issues = await analyzeCode(path, code, prompt, round);
-                
-                if (issues.length > 0) {
-                    allIssues.push(...issues);
-                    if (fileEl) fileEl.classList.add('has-issue');
+                if (lineIssues.some(i => i.severity === 'critical' || i.severity === 'high')) {
+                    className += ' error';
+                } else if (lineIssues.length > 0) {
+                    className += ' warning';
                 }
-            } catch (e) {
-                console.error(`Error scanning ${path} round ${round}:`, e);
-            }
+                
+                html += `<span class="${className}" onclick="askAboutLine('${path}', ${lineNum})">${String(lineNum).padStart(4)}| ${escapeHtml(line)}</span>\n`;
+            });
             
-            if (fileEl) {
-                fileEl.classList.remove('scanning');
-                fileEl.classList.add('done');
-            }
-            
-            scanState.done++;
-            updateProgress();
+            view.innerHTML = html;
         }
 
-        const MAX_CONCURRENT = 5;
-
-        function sleep(ms) {
-            return new Promise(r => setTimeout(r, ms));
-        }
-
-        function updateProgress() {
-            const total = Object.keys(files).length * 5; // 5 rounds
-            const done = (currentRound - 1) * Object.keys(files).length + scanState.done;
-            const percent = Math.round((done / total) * 100);
+        // ===== 掃描 =====
+        async function startScan() {
+            if (isScanning) return;
+            isScanning = true;
+            document.getElementById('scanBtn').disabled = true;
+            document.getElementById('scan-status').textContent = 'Scanning...';
             
-            document.getElementById('stat-progress').textContent = percent + '%';
-            document.getElementById('progress-bar').style.width = percent + '%';
-            document.getElementById('stat-issues').textContent = allIssues.length;
-        }
-
-        async function analyzeCode(path, code, promptBase, round) {
-            const types = ['', 'syntax', 'logic', 'memory', 'security', 'perf'];
+            addChatMessage('ai', '🔍 Starting scan. This may take a moment...');
             
-            // 分段處理
-            const chunkSize = 60000;
-            const chunks = [];
-            for (let i = 0; i < code.length; i += chunkSize) {
-                chunks.push(code.substring(i, Math.min(i + chunkSize, code.length)));
-            }
-            
+            const filePaths = Object.keys(files);
             const allIssues = [];
+            let done = 0;
             
-            for (let i = 0; i < chunks.length; i++) {
-                const prompt = `${promptBase}
+            // 並行掃描
+            const promises = filePaths.map(async path => {
+                const fileIssues = await scanFile(path, files[path]);
+                allIssues.push(...fileIssues);
+                done++;
+                document.getElementById('scan-status').textContent = `${done}/${filePaths.length}`;
+                return fileIssues;
+            });
+            
+            await Promise.all(promises);
+            
+            issues = allIssues;
+            document.getElementById('issue-count').textContent = issues.length;
+            
+            renderIssues();
+            
+            // 標記有問題的檔案
+            const problemFiles = new Set(issues.map(i => i.file));
+            document.querySelectorAll('.file-item').forEach(item => {
+                const path = Object.keys(files).find(p => p.split('/').pop() === item.textContent);
+                if (problemFiles.has(path)) {
+                    item.classList.add('has-issue');
+                }
+            });
+            
+            isScanning = false;
+            document.getElementById('scanBtn').disabled = false;
+            document.getElementById('scan-status').textContent = 'Done';
+            
+            const critical = issues.filter(i => i.severity === 'critical').length;
+            const high = issues.filter(i => i.severity === 'high').length;
+            
+            addChatMessage('ai', `✅ Scan complete!\n\nFound ${issues.length} issues:\n• ${critical} Critical\n• ${high} High\n• ${issues.length - critical - high} Medium/Low\n\nClick on any issue to discuss it with me.`);
+        }
 
-File: ${path}${chunks.length > 1 ? ` (Part ${i+1}/${chunks.length})` : ''}
+        async function scanFile(path, code) {
+            const prompt = `Analyze this code for bugs, errors, and issues.
+
+File: ${path}
 
 \`\`\`
-${chunks[i]}
+${code.substring(0, 50000)}
 \`\`\`
 
-Output format (JSON):
+Output JSON only:
 {
   "issues": [
     {
       "severity": "critical|high|medium|low",
-      "line": number_or_null,
-      "description": "what's wrong",
-      "code_snippet": "the problematic code",
-      "suggestion": "how to fix"
+      "line": <line number or null>,
+      "type": "bug|security|performance|memory|logic",
+      "title": "<short title>",
+      "description": "<what's wrong>",
+      "suggestion": "<how to fix>"
     }
   ]
-}
+}`;
 
-Only output the JSON. If no issues found, output {"issues":[]}`;
+            try {
+                const res = await fetch(config.endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${config.key}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'liquid/lfm-40b',
+                        messages: [{ role: 'user', content: prompt }],
+                        max_tokens: 2048
+                    })
+                });
 
-                try {
-                    const res = await fetch(config.endpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${config.key}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            model: 'liquid/lfm-40b',
-                            messages: [{ role: 'user', content: prompt }],
-                            max_tokens: 2048
-                        })
-                    });
-
-                    if (!res.ok) continue;
-
-                    const data = await res.json();
-                    const content = data.choices?.[0]?.message?.content || '';
-                    
-                    // 解析 JSON
-                    const jsonMatch = content.match(/\{[\s\S]*\}/);
-                    if (jsonMatch) {
-                        try {
-                            const parsed = JSON.parse(jsonMatch[0]);
-                            if (parsed.issues) {
-                                parsed.issues.forEach(issue => {
-                                    allIssues.push({
-                                        ...issue,
-                                        file: path,
-                                        type: types[round],
-                                        round: round
-                                    });
-                                });
-                            }
-                        } catch (e) {}
-                    }
-                } catch (e) {}
-            }
+                const data = await res.json();
+                const content = data.choices?.[0]?.message?.content || '';
+                
+                const jsonMatch = content.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    return (parsed.issues || []).map(i => ({ ...i, file: path }));
+                }
+            } catch (e) {}
             
-            return allIssues;
+            return [];
         }
 
-        function renderFinalReport() {
-            const reportBody = document.getElementById('report-body');
+        function renderIssues() {
+            const list = document.getElementById('issues-list');
             
-            // 統計
-            const critical = allIssues.filter(i => i.severity === 'critical').length;
-            const high = allIssues.filter(i => i.severity === 'high').length;
-            const medium = allIssues.filter(i => i.severity === 'medium').length;
-            const low = allIssues.filter(i => i.severity === 'low').length;
+            if (issues.length === 0) {
+                list.innerHTML = '<div style="color:var(--accent);text-align:center;padding:30px;">✓ No issues found!</div>';
+                return;
+            }
             
-            document.getElementById('stat-crit').textContent = critical;
-            document.getElementById('stat-high').textContent = high;
-            document.getElementById('stat-med').textContent = medium;
-            document.getElementById('stat-low').textContent = low;
-            document.getElementById('report-count').textContent = `${allIssues.length} issues`;
-            
-            // 按嚴重程度排序
-            const sorted = [...allIssues].sort((a, b) => {
+            const sorted = [...issues].sort((a, b) => {
                 const order = { critical: 0, high: 1, medium: 2, low: 3 };
                 return order[a.severity] - order[b.severity];
             });
             
-            // 按類型分組
-            const grouped = {
-                syntax: sorted.filter(i => i.type === 'syntax'),
-                logic: sorted.filter(i => i.type === 'logic'),
-                memory: sorted.filter(i => i.type === 'memory'),
-                security: sorted.filter(i => i.type === 'security'),
-                perf: sorted.filter(i => i.type === 'perf')
-            };
+            list.innerHTML = sorted.map((issue, i) => `
+                <div class="issue-card ${issue.severity}" onclick="discussIssue(${i})">
+                    <div class="issue-title">
+                        ${escapeHtml(issue.title)}
+                        <span class="issue-badge badge-${issue.severity}">${issue.severity.toUpperCase()}</span>
+                    </div>
+                    <div class="issue-meta">
+                        ${issue.file.split('/').pop()}${issue.line ? ':' + issue.line : ''} • ${issue.type}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ===== 對話 =====
+        function addChatMessage(role, content) {
+            const messages = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = `message message-${role}`;
             
-            let html = '';
+            const formattedContent = content
+                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre>$2</pre>')
+                .replace(/`([^`]+)`/g, '<code style="background:#000;padding:2px 5px;">$1</code>')
+                .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+                .replace(/\n/g, '<br>');
             
-            const typeNames = {
-                syntax: 'SYNTAX ERRORS',
-                logic: 'LOGIC ISSUES',
-                memory: 'MEMORY ISSUES',
-                security: 'SECURITY VULNERABILITIES',
-                perf: 'PERFORMANCE ISSUES'
-            };
+            div.innerHTML = `<div class="bubble">${formattedContent}</div>`;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (!message) return;
             
-            for (let type in grouped) {
-                if (grouped[type].length === 0) continue;
-                
-                html += `<div class="report-section">
-                    <div class="section-title">${typeNames[type]} (${grouped[type].length})</div>`;
-                
-                grouped[type].forEach(issue => {
-                    html += `
-                    <div class="issue-card ${issue.severity}">
-                        <div class="issue-header">
-                            <span class="issue-file">${issue.file}${issue.line ? ':' + issue.line : ''}</span>
-                            <span class="issue-type type-${issue.type}">${issue.type.toUpperCase()}</span>
-                        </div>
-                        <div class="issue-desc">${escapeHtml(issue.description)}</div>
-                        ${issue.code_snippet ? `<div class="issue-code">${escapeHtml(issue.code_snippet)}</div>` : ''}
-                        ${issue.suggestion ? `<div class="issue-fix"><b>Fix:</b> ${escapeHtml(issue.suggestion)}</div>` : ''}
-                    </div>`;
+            input.value = '';
+            addChatMessage('user', message);
+            
+            document.getElementById('chat-send').disabled = true;
+            
+            // 構建上下文
+            let context = '';
+            if (currentFile) {
+                context = `\n\nCurrent file: ${currentFile}\n\`\`\`\n${files[currentFile].substring(0, 10000)}\n\`\`\``;
+            }
+            
+            const messages = document.getElementById('chat-messages');
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message message-ai';
+            typingDiv.innerHTML = '<div class="bubble typing">Apollo is thinking...</div>';
+            messages.appendChild(typingDiv);
+            messages.scrollTop = messages.scrollHeight;
+            
+            try {
+                const res = await fetch(config.endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${config.key}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'liquid/lfm-40b',
+                        messages: [
+                            { role: 'system', content: 'You are Apollo, a helpful code auditor. Answer questions about code clearly and concisely.' + context },
+                            { role: 'user', content: message }
+                        ],
+                        stream: true
+                    })
                 });
-                
-                html += `</div>`;
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let response = '';
+
+                typingDiv.querySelector('.bubble').classList.remove('typing');
+                typingDiv.querySelector('.bubble').innerHTML = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6).trim();
+                            if (data === '[DONE]') continue;
+                            try {
+                                const json = JSON.parse(data);
+                                const word = json.choices?.[0]?.delta?.content || '';
+                                response += word;
+                                
+                                const formatted = response
+                                    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre>$2</pre>')
+                                    .replace(/`([^`]+)`/g, '<code style="background:#000;padding:2px 5px;">$1</code>')
+                                    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+                                    .replace(/\n/g, '<br>');
+                                
+                                typingDiv.querySelector('.bubble').innerHTML = formatted;
+                                messages.scrollTop = messages.scrollHeight;
+                            } catch (e) {}
+                        }
+                    }
+                }
+            } catch (e) {
+                typingDiv.querySelector('.bubble').innerHTML = `<span style="color:var(--err)">Error: ${e.message}</span>`;
             }
             
-            if (html === '') {
-                html = '<div style="text-align:center;color:var(--accent);padding:50px;">✓ No issues found!</div>';
+            document.getElementById('chat-send').disabled = false;
+        }
+
+        function quickAsk(type) {
+            const prompts = {
+                explain: 'Explain what this code does and how it works:',
+                fix: 'What are the bugs in this code and how do I fix them?',
+                security: 'Are there any security vulnerabilities in this code?',
+                optimize: 'How can I optimize this code for better performance?'
+            };
+            
+            document.getElementById('chat-input').value = prompts[type];
+            sendMessage();
+        }
+
+        function discussIssue(index) {
+            const issue = issues[index];
+            if (!issue) return;
+            
+            // 跳到該檔案
+            if (issue.file !== currentFile) {
+                selectFile(issue.file);
             }
             
-            reportBody.innerHTML = html;
+            // 跳到該行
+            if (issue.line) {
+                const codeView = document.getElementById('code-view');
+                const lines = codeView.querySelectorAll('.line');
+                if (lines[issue.line - 1]) {
+                    lines[issue.line - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+            
+            // 在對話框討論
+            document.getElementById('chat-input').value = `Tell me more about this issue:\n"${issue.title}"\n\n${issue.description}`;
+            sendMessage();
+        }
+
+        function askAboutLine(path, lineNum) {
+            const code = files[path].split('\n')[lineNum - 1];
+            document.getElementById('chat-input').value = `What's wrong with line ${lineNum}?\n\`\`\`\n${code}\n\`\`\``;
         }
 
         function escapeHtml(str) {
             if (!str) return '';
-            return str.replace(/&/g, '&amp;')
-                      .replace(/</g, '&lt;')
-                      .replace(/>/g, '&gt;')
-                      .replace(/"/g, '&quot;');
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
+
+        // Enter 鍵發送
+        document.getElementById('chat-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
     </script>
 </body>
 </html>
