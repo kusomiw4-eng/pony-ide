@@ -87,8 +87,9 @@
     <div id="boot">
         <div class="boot-title">⬡ APOLLO MULTI-ROUND AUDIT</div>
         <div class="boot-desc">5-Round Deep Scan • Zero False Negatives</div>
-        <input type="password" id="apiKey" placeholder="Enter OpenRouter Key">
-        <button onclick="enterSystem()">INITIALIZE SYSTEM</button>
+        <input type="text" id="endpoint" placeholder="API Endpoint">
+        <input type="password" id="key" placeholder="API Key">
+        <button onclick="init()">START SYSTEM</button>
     </div>
 
     <header>
@@ -107,7 +108,7 @@
                 <div class="round-tab" data-round="1">R1<br>SYNTAX</div>
                 <div class="round-tab" data-round="2">R2<br>LOGIC</div>
                 <div class="round-tab" data-round="3">R3<br>MEMORY</div>
-                <div class="round-tab" data-round="4">R4<br>SECURE</div>
+                <div class="round-tab" data-round="4">R4<br>SECURITY</div>
                 <div class="round-tab" data-round="5">R5<br>PERF</div>
             </div>
             <div id="file-list">
@@ -166,25 +167,71 @@
     <input type="file" id="file-input" accept=".zip">
 
     <script>
-        let key = '';
+        const config = { key: '', endpoint: '' };
         let files = {};
         let allIssues = [];
         let currentRound = 0;
         let scanState = { total: 0, done: 0 };
         let abortScan = false;
 
-        // ===== 5 輪掃描的 Prompt (針對你的 3D 遊戲優化) =====
+        // ===== 5 輪掃描的 Prompt =====
         const ROUND_PROMPTS = {
-            1: `Round 1 - SYNTAX & STRUCTURE: Check for syntax errors, missing imports, unused variables, and type mismatches. Ignore style issues. Output structured JSON.`,
-            2: `Round 2 - LOGIC & BUGS: Check for off-by-one errors, infinite loops, incorrect conditionals, and race conditions in async functions. Output structured JSON.`,
-            3: `Round 3 - MEMORY & 3D RESOURCES: Focus on THREE.js/WebGL memory leaks. Look for un-disposed geometries, textures, materials, and accumulation in arrays/objects. Output structured JSON.`,
-            4: `Round 4 - SECURITY: Check for injection risks, unsafe innerHTML usage, and exposed secrets. Output structured JSON.`,
-            5: `Round 5 - PERFORMANCE: Identify O(n^2) loops, blocking main thread operations, layout thrashing, and unnecessary re-renders. Output structured JSON.`
+            1: `Round 1 - SYNTAX & STRUCTURE ANALYSIS
+Check for:
+- Syntax errors (missing semicolons, brackets, parentheses)
+- Unused variables, functions, imports
+- Missing imports or undefined references
+- Type mismatches
+- Invalid function signatures
+Output ONLY real issues. Skip style suggestions.`,
+
+            2: `Round 2 - LOGIC ANALYSIS
+Check for:
+- Off-by-one errors
+- Incorrect conditionals (wrong operators, missing cases)
+- Race conditions in async code
+- Dead code (unreachable statements)
+- Incorrect loop logic
+- Null/undefined access risks
+Output ONLY real issues with specific line references.`,
+
+            3: `Round 3 - MEMORY & RESOURCE ANALYSIS
+Check for:
+- Memory leaks (unreleased closures, event listeners)
+- Unclosed connections, files, streams
+- Circular references
+- Cache without expiration
+- Large object accumulation
+- Missing cleanup in useEffect/componentWillUnmount
+Output ONLY real issues.`,
+
+            4: `Round 4 - SECURITY ANALYSIS
+Check for:
+- XSS vulnerabilities (innerHTML, dangerouslySetInnerHTML)
+- SQL/NoSQL injection risks
+- Hardcoded secrets (API keys, passwords)
+- Insecure deserialization
+- Missing input validation
+- CSRF risks
+- eval() and dynamic code execution
+Output ONLY real security issues.`,
+
+            5: `Round 5 - PERFORMANCE ANALYSIS
+Check for:
+- O(n²) or worse algorithms
+- Unnecessary re-renders (React)
+- Large bundle imports
+- Blocking synchronous operations
+- Inefficient DOM manipulation
+- Memory-heavy operations in loops
+- Missing debounce/throttle
+Output ONLY real performance issues.`
         };
 
-        function enterSystem() {
-            key = document.getElementById('apiKey').value;
-            if (!key) return alert('Key?');
+        function init() {
+            config.key = document.getElementById('key').value;
+            config.endpoint = document.getElementById('endpoint').value || 'https://api.liquid.ai/v1/chat/completions';
+            if (!config.key) return alert('API Key required');
             document.getElementById('boot').style.display = 'none';
         }
 
@@ -194,197 +241,312 @@
             
             const zip = new JSZip();
             const content = await zip.loadAsync(file);
-            files = {}; allIssues = [];
             
-            // 🔥 這裡就是你的白名單過濾器
-            const ALLOWED = ['.js', '.html', '.css', '.ts'];
+            files = {};
+            allIssues = [];
             
             for (let path in content.files) {
-                // 過濾垃圾
-                if (!content.files[path].dir && !path.includes('__MACOSX') && !path.includes('.DS_Store') && !path.includes('.git/')) {
-                    // 檢查副檔名
-                    if(ALLOWED.some(ext => path.toLowerCase().endsWith(ext))) {
+                if (!content.files[path].dir && isValidFile(path) && !path.includes('node_modules')) {
+                    try {
                         const text = await content.files[path].async('string');
-                        files[path] = text;
-                    }
+                        if (text && text.length > 0) {
+                            files[path] = text;
+                        }
+                    } catch(e) {}
                 }
             }
             
             const total = Object.keys(files).length;
             document.getElementById('stat-total').textContent = total;
             document.getElementById('startBtn').style.display = 'block';
-            document.getElementById('header-status').textContent = `${total} Valid Files Loaded`;
+            document.getElementById('header-status').textContent = `${total} files loaded`;
+            
             renderFileList();
         });
+
+        function isValidFile(path) {
+            const ext = path.split('.').pop().toLowerCase();
+            return ['js','ts','jsx','tsx','py','java','go','rs','c','cpp','php','rb','swift','kt'].includes(ext);
+        }
 
         function renderFileList() {
             const list = document.getElementById('file-list');
             list.innerHTML = '';
+            
             Object.keys(files).forEach(path => {
                 const item = document.createElement('div');
                 item.className = 'file-item pending';
-                item.id = 'file-' + path.replace(/[^a-zA-Z0-9]/g, '-');
-                item.innerHTML = `<span style="overflow:hidden;text-overflow:ellipsis">${path}</span><span class="file-status">-</span>`;
+                item.id = 'file-' + hashPath(path);
+                item.innerHTML = `
+                    <span style="overflow:hidden;text-overflow:ellipsis">${path.split('/').pop()}</span>
+                    <span class="file-status">-</span>
+                `;
                 list.appendChild(item);
             });
         }
 
+        function hashPath(path) {
+            let hash = 0;
+            for (let i = 0; i < path.length; i++) {
+                hash = ((hash << 5) - hash) + path.charCodeAt(i);
+                hash |= 0;
+            }
+            return Math.abs(hash);
+        }
+
+        // ===== 多輪掃描主控制 =====
         async function startAllRounds() {
             document.getElementById('startBtn').disabled = true;
             document.getElementById('uploadBtn').disabled = true;
             abortScan = false;
+            allIssues = [];
             
+            const totalRounds = 5;
             const filePaths = Object.keys(files);
             
-            for (let round = 1; round <= 5; round++) {
+            for (let round = 1; round <= totalRounds; round++) {
+                if (abortScan) break;
+                
                 currentRound = round;
                 document.getElementById('stat-round').textContent = `Round ${round}`;
-                document.getElementById('header-round').textContent = `Running Round ${round}/5...`;
+                document.getElementById('header-round').textContent = `Round ${round}/5`;
                 
-                // UI Tab Update
+                // 更新 tab 狀態
                 document.querySelectorAll('.round-tab').forEach(tab => {
                     tab.classList.remove('active', 'running');
-                    if (parseInt(tab.dataset.round) === round) tab.classList.add('active', 'running');
-                    else if (parseInt(tab.dataset.round) < round) tab.classList.add('done');
+                    if (parseInt(tab.dataset.round) === round) {
+                        tab.classList.add('active', 'running');
+                    } else if (parseInt(tab.dataset.round) < round) {
+                        tab.classList.add('done');
+                    }
                 });
                 
+                // 並行處理這一輪的所有檔案
                 scanState = { total: filePaths.length, done: 0 };
                 
-                // 為了避免瀏覽器卡死，我們一次只發 3 個請求 (Concurrency Control)
-                await processQueue(filePaths, round, 3);
+                const promises = filePaths.map(path => scanFileRound(path, round));
+                await Promise.all(promises);
+                
+                // 標記這輪完成
+                document.querySelector(`.round-tab[data-round="${round}"]`).classList.remove('running');
+                document.querySelector(`.round-tab[data-round="${round}"]`).classList.add('done');
             }
             
-            document.getElementById('header-status').textContent = 'AUDIT COMPLETE';
-            document.getElementById('header-round').textContent = 'Done';
+            // 完成
+            document.getElementById('header-status').textContent = 'SCAN COMPLETE';
+            document.getElementById('header-round').textContent = '';
             document.getElementById('stat-round').textContent = 'DONE';
             document.getElementById('startBtn').disabled = false;
             document.getElementById('uploadBtn').disabled = false;
+            
             renderFinalReport();
         }
 
-        async function processQueue(paths, round, concurrency) {
-            let index = 0;
-            const exec = async () => {
-                while (index < paths.length) {
-                    const path = paths[index++];
-                    await scanFileRound(path, round);
-                }
-            };
-            await Promise.all(Array(concurrency).fill(null).map(exec));
-        }
-
         async function scanFileRound(path, round) {
-            const fileId = 'file-' + path.replace(/[^a-zA-Z0-9]/g, '-');
-            const fileEl = document.getElementById(fileId);
+            // 限制並發
+            while (scanState.done - scanState.total + MAX_CONCURRENT > 0) {
+                await sleep(50);
+            }
             
+            const fileEl = document.getElementById('file-' + hashPath(path));
             if (fileEl) {
-                fileEl.className = 'file-item scanning';
+                fileEl.classList.remove('pending');
+                fileEl.classList.add('scanning');
                 fileEl.querySelector('.file-status').textContent = `R${round}`;
-                fileEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
             
             const code = files[path];
-            // 每次最多讀 30k 字，自動截斷
-            const safeCode = code.substring(0, 30000); 
+            const prompt = ROUND_PROMPTS[round];
             
-            const prompt = `${ROUND_PROMPTS[round]}
-            
-File: ${path}
-Code Snippet:
-\`\`\`
-${safeCode}
-\`\`\`
-
-RETURN ONLY JSON format:
-{
-  "issues": [
-    {
-      "severity": "critical|high|medium|low",
-      "line": 10,
-      "description": "Short description of the issue",
-      "code_snippet": "The problematic code",
-      "suggestion": "How to fix it"
-    }
-  ]
-}
-If no issues, return {"issues": []}`;
-
             try {
-                const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model: 'liquid/lfm-40b', // 使用 Liquid 或 Pony，這裡預設 Liquid 因為 JSON 比較穩
-                        messages: [{ role: 'user', content: prompt }]
-                    })
-                });
+                const issues = await analyzeCode(path, code, prompt, round);
                 
-                const data = await res.json();
-                const content = data.choices?.[0]?.message?.content || "";
-                
-                // 嘗試解析 JSON
-                const jsonMatch = content.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    const parsed = JSON.parse(jsonMatch[0]);
-                    if (parsed.issues && parsed.issues.length > 0) {
-                        parsed.issues.forEach(i => {
-                            allIssues.push({ ...i, file: path, type: ['','syntax','logic','memory','security','perf'][round] });
-                        });
-                        if(fileEl) fileEl.classList.add('has-issue');
-                    }
+                if (issues.length > 0) {
+                    allIssues.push(...issues);
+                    if (fileEl) fileEl.classList.add('has-issue');
                 }
-            } catch (e) { console.log(e); }
-
+            } catch (e) {
+                console.error(`Error scanning ${path} round ${round}:`, e);
+            }
+            
             if (fileEl) {
                 fileEl.classList.remove('scanning');
                 fileEl.classList.add('done');
             }
             
             scanState.done++;
-            updateStats();
+            updateProgress();
         }
 
-        function updateStats() {
-            const totalSteps = Object.keys(files).length * 5;
-            const currentSteps = ((currentRound-1) * Object.keys(files).length) + scanState.done;
-            const pct = Math.round((currentSteps/totalSteps)*100);
+        const MAX_CONCURRENT = 5;
+
+        function sleep(ms) {
+            return new Promise(r => setTimeout(r, ms));
+        }
+
+        function updateProgress() {
+            const total = Object.keys(files).length * 5; // 5 rounds
+            const done = (currentRound - 1) * Object.keys(files).length + scanState.done;
+            const percent = Math.round((done / total) * 100);
             
-            document.getElementById('stat-progress').textContent = pct + '%';
-            document.getElementById('progress-bar').style.width = pct + '%';
+            document.getElementById('stat-progress').textContent = percent + '%';
+            document.getElementById('progress-bar').style.width = percent + '%';
             document.getElementById('stat-issues').textContent = allIssues.length;
         }
 
+        async function analyzeCode(path, code, promptBase, round) {
+            const types = ['', 'syntax', 'logic', 'memory', 'security', 'perf'];
+            
+            // 分段處理
+            const chunkSize = 60000;
+            const chunks = [];
+            for (let i = 0; i < code.length; i += chunkSize) {
+                chunks.push(code.substring(i, Math.min(i + chunkSize, code.length)));
+            }
+            
+            const allIssues = [];
+            
+            for (let i = 0; i < chunks.length; i++) {
+                const prompt = `${promptBase}
+
+File: ${path}${chunks.length > 1 ? ` (Part ${i+1}/${chunks.length})` : ''}
+
+\`\`\`
+${chunks[i]}
+\`\`\`
+
+Output format (JSON):
+{
+  "issues": [
+    {
+      "severity": "critical|high|medium|low",
+      "line": number_or_null,
+      "description": "what's wrong",
+      "code_snippet": "the problematic code",
+      "suggestion": "how to fix"
+    }
+  ]
+}
+
+Only output the JSON. If no issues found, output {"issues":[]}`;
+
+                try {
+                    const res = await fetch(config.endpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${config.key}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            model: 'liquid/lfm-40b',
+                            messages: [{ role: 'user', content: prompt }],
+                            max_tokens: 2048
+                        })
+                    });
+
+                    if (!res.ok) continue;
+
+                    const data = await res.json();
+                    const content = data.choices?.[0]?.message?.content || '';
+                    
+                    // 解析 JSON
+                    const jsonMatch = content.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        try {
+                            const parsed = JSON.parse(jsonMatch[0]);
+                            if (parsed.issues) {
+                                parsed.issues.forEach(issue => {
+                                    allIssues.push({
+                                        ...issue,
+                                        file: path,
+                                        type: types[round],
+                                        round: round
+                                    });
+                                });
+                            }
+                        } catch (e) {}
+                    }
+                } catch (e) {}
+            }
+            
+            return allIssues;
+        }
+
         function renderFinalReport() {
-            const container = document.getElementById('report-body');
+            const reportBody = document.getElementById('report-body');
+            
+            // 統計
+            const critical = allIssues.filter(i => i.severity === 'critical').length;
+            const high = allIssues.filter(i => i.severity === 'high').length;
+            const medium = allIssues.filter(i => i.severity === 'medium').length;
+            const low = allIssues.filter(i => i.severity === 'low').length;
+            
+            document.getElementById('stat-crit').textContent = critical;
+            document.getElementById('stat-high').textContent = high;
+            document.getElementById('stat-med').textContent = medium;
+            document.getElementById('stat-low').textContent = low;
+            document.getElementById('report-count').textContent = `${allIssues.length} issues`;
+            
+            // 按嚴重程度排序
+            const sorted = [...allIssues].sort((a, b) => {
+                const order = { critical: 0, high: 1, medium: 2, low: 3 };
+                return order[a.severity] - order[b.severity];
+            });
+            
+            // 按類型分組
+            const grouped = {
+                syntax: sorted.filter(i => i.type === 'syntax'),
+                logic: sorted.filter(i => i.type === 'logic'),
+                memory: sorted.filter(i => i.type === 'memory'),
+                security: sorted.filter(i => i.type === 'security'),
+                perf: sorted.filter(i => i.type === 'perf')
+            };
+            
             let html = '';
             
-            // 排序: Critical First
-            allIssues.sort((a,b) => {
-                const map = { critical: 0, high: 1, medium: 2, low: 3 };
-                return map[a.severity] - map[b.severity];
-            });
+            const typeNames = {
+                syntax: 'SYNTAX ERRORS',
+                logic: 'LOGIC ISSUES',
+                memory: 'MEMORY ISSUES',
+                security: 'SECURITY VULNERABILITIES',
+                perf: 'PERFORMANCE ISSUES'
+            };
+            
+            for (let type in grouped) {
+                if (grouped[type].length === 0) continue;
+                
+                html += `<div class="report-section">
+                    <div class="section-title">${typeNames[type]} (${grouped[type].length})</div>`;
+                
+                grouped[type].forEach(issue => {
+                    html += `
+                    <div class="issue-card ${issue.severity}">
+                        <div class="issue-header">
+                            <span class="issue-file">${issue.file}${issue.line ? ':' + issue.line : ''}</span>
+                            <span class="issue-type type-${issue.type}">${issue.type.toUpperCase()}</span>
+                        </div>
+                        <div class="issue-desc">${escapeHtml(issue.description)}</div>
+                        ${issue.code_snippet ? `<div class="issue-code">${escapeHtml(issue.code_snippet)}</div>` : ''}
+                        ${issue.suggestion ? `<div class="issue-fix"><b>Fix:</b> ${escapeHtml(issue.suggestion)}</div>` : ''}
+                    </div>`;
+                });
+                
+                html += `</div>`;
+            }
+            
+            if (html === '') {
+                html = '<div style="text-align:center;color:var(--accent);padding:50px;">✓ No issues found!</div>';
+            }
+            
+            reportBody.innerHTML = html;
+        }
 
-            // 統計
-            document.getElementById('stat-crit').innerText = allIssues.filter(i=>i.severity==='critical').length;
-            document.getElementById('stat-high').innerText = allIssues.filter(i=>i.severity==='high').length;
-            document.getElementById('stat-med').innerText = allIssues.filter(i=>i.severity==='medium').length;
-            document.getElementById('stat-low').innerText = allIssues.filter(i=>i.severity==='low').length;
-
-            allIssues.forEach(issue => {
-                html += `
-                <div class="issue-card ${issue.severity}">
-                    <div class="issue-header">
-                        <span class="issue-file">${issue.file} (Line ${issue.line || '?'})</span>
-                        <span class="issue-type type-${issue.type}">${issue.type.toUpperCase()}</span>
-                    </div>
-                    <div class="issue-desc">${issue.description}</div>
-                    ${issue.code_snippet ? `<div class="issue-code">${issue.code_snippet.replace(/</g,'&lt;')}</div>` : ''}
-                    <div class="issue-fix">💡 <b>FIX:</b> ${issue.suggestion}</div>
-                </div>`;
-            });
-
-            if(allIssues.length === 0) html = "<div style='text-align:center; padding:50px; color:#00ff41;'>✨ PERFECT CODE. NO ISSUES FOUND.</div>";
-            container.innerHTML = html;
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;')
+                      .replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;')
+                      .replace(/"/g, '&quot;');
         }
     </script>
 </body>
