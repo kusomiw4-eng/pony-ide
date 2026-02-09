@@ -3,279 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemini Clone - Direct Mode</title>
+    <title>Gemini All-Files Audit</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #131314;
-            --sidebar-color: #1e1f20;
+            --bg: #131314;
+            --sidebar: #1e1f20;
             --input-bg: #282a2c;
-            --text-primary: #e3e3e3;
-            --text-secondary: #c4c7c5;
-            --accent-blue: #a8c7fa;
-            --user-bubble: #282a2c;
-            --ai-bubble: transparent;
+            --text: #e3e3e3;
+            --accent: #a8c7fa;
         }
 
-        * { box-sizing: border-box; }
-        body { margin: 0; background: var(--bg-color); color: var(--text-primary); font-family: 'Google Sans', sans-serif; height: 100vh; display: flex; overflow: hidden; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Google Sans', sans-serif; height: 100vh; display: flex; overflow: hidden; }
 
-        /* 左側 Sidebar (檔案列表) */
-        #sidebar {
-            width: 260px;
-            background: var(--bg-color);
-            display: flex;
-            flex-direction: column;
-            padding: 20px 10px;
-            border-right: 1px solid #333;
-        }
-
-        .new-chat-btn {
-            background: #1b1b1b;
-            color: #c4c7c5;
-            padding: 10px 15px;
-            border-radius: 20px;
-            border: 1px solid #444;
-            cursor: pointer;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 20px;
-            transition: 0.2s;
-        }
-        .new-chat-btn:hover { background: #333; }
-
-        .section-title { font-size: 12px; color: #888; margin-bottom: 10px; padding-left: 10px; font-weight: 500; }
-
+        /* 左側檔案列表 */
+        #sidebar { width: 260px; background: var(--bg); border-right: 1px solid #333; padding: 20px; display: flex; flex-direction: column; }
+        .file-count { color: #888; font-size: 12px; margin-bottom: 10px; font-weight: bold; }
         #file-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
-        .file-item {
-            padding: 10px 15px;
-            font-size: 13px;
-            color: var(--text-secondary);
-            cursor: pointer;
-            border-radius: 20px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            transition: 0.2s;
-        }
-        .file-item:hover { background: #28292a; }
-        .file-item.active { background: #004a77; color: #c2e7ff; font-weight: 500; }
+        .file-item { padding: 8px 12px; background: #1e1f20; border-radius: 8px; font-size: 12px; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-        /* 右側主畫面 */
+        /* 主畫面 */
         #main { flex: 1; display: flex; flex-direction: column; position: relative; }
 
-        /* 頂部模型選擇 */
-        #top-bar {
-            height: 60px;
-            display: flex;
-            align-items: center;
-            padding: 0 20px;
-            font-size: 18px;
-            color: var(--text-secondary);
-            cursor: pointer;
-        }
-        #model-select {
-            background: transparent;
-            color: var(--text-primary);
-            border: none;
-            font-size: 16px;
-            font-family: 'Google Sans', sans-serif;
-            cursor: pointer;
-            padding: 5px 10px;
-            border-radius: 8px;
-        }
-        #model-select:hover { background: #28292a; }
+        /* 頂部 */
+        #top-bar { height: 60px; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #333; }
+        select { background: #282a2c; color: white; border: 1px solid #444; padding: 5px 10px; border-radius: 8px; font-size: 14px; }
 
-        /* 聊天區域 */
-        #chat-container {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px 15%; /* 像 Gemini 一樣置中 */
-            display: flex;
-            flex-direction: column;
-            gap: 30px;
-            scroll-behavior: smooth;
-        }
+        /* 聊天區 */
+        #chat-box { flex: 1; overflow-y: auto; padding: 30px 15%; display: flex; flex-direction: column; gap: 30px; }
+        .msg { display: flex; gap: 15px; line-height: 1.6; }
+        .avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-weight: bold; }
+        .u { background: #444; } 
+        .a { background: linear-gradient(135deg, #4285f4, #9b72cb); color: white; }
+        
+        .content { background: transparent; width: 100%; overflow-x: auto; }
+        
+        /* Loading */
+        .loading-bar { height: 4px; width: 100%; background: linear-gradient(90deg, #4285f4, #9b72cb, #d96570); background-size: 200% 100%; animation: g 2s linear infinite; border-radius: 4px; margin-top: 5px; }
+        @keyframes g { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 
-        /* 訊息樣式 */
-        .msg { display: flex; gap: 15px; line-height: 1.6; font-size: 15px; }
-        .msg-user { justify-content: flex-end; }
-        .msg-user .content {
-            background: #282a2c;
-            padding: 12px 18px;
-            border-radius: 18px 18px 4px 18px;
-            max-width: 80%;
-        }
-        .msg-ai { justify-content: flex-start; }
-        .msg-ai .content {
-            background: transparent;
-            width: 100%;
-            overflow-x: hidden;
-        }
-        .avatar {
-            width: 30px; height: 30px; border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            font-weight: bold; font-size: 12px;
-        }
-        .avatar.u { background: #444; color: #fff; }
-        .avatar.a { background: linear-gradient(135deg, #4285f4, #9b72cb); color: white; }
+        /* 底部輸入 */
+        #input-area { padding: 20px 15%; background: var(--bg); }
+        .input-wrapper { background: var(--input-bg); border-radius: 25px; padding: 10px 15px; display: flex; align-items: center; gap: 10px; }
+        textarea { flex: 1; background: transparent; border: none; color: white; resize: none; height: 24px; outline: none; font-size: 16px; font-family: 'Google Sans'; }
+        
+        /* 檔案標籤 (全部檔案) */
+        #all-files-badge { font-size: 11px; background: #004a77; color: #c2e7ff; padding: 4px 10px; border-radius: 4px; margin-bottom: 10px; display: none; width: fit-content; }
 
-        /* Markdown 代碼塊樣式 */
-        pre {
-            background: #1e1f20;
-            border-radius: 8px;
-            padding: 15px;
-            overflow-x: auto;
-            border: 1px solid #333;
-        }
-        code { font-family: 'Consolas', monospace; color: #e6cd69; }
+        /* Markdown */
+        pre { background: #1e1f20; padding: 15px; border-radius: 8px; overflow-x: auto; border: 1px solid #333; }
+        code { font-family: monospace; color: #e6cd69; }
 
-        /* 底部輸入區 (Gemini Style) */
-        #input-area {
-            padding: 20px 15%;
-            background: var(--bg-color);
-        }
-        #input-box-wrapper {
-            background: var(--input-bg);
-            border-radius: 25px;
-            padding: 10px 15px;
-            display: flex;
-            align-items: flex-end; /* 讓按鈕沉底 */
-            gap: 10px;
-            border: 1px solid transparent;
-            transition: 0.2s;
-        }
-        #input-box-wrapper:focus-within { background: #333; border-color: #555; }
-
-        #plus-btn {
-            width: 36px; height: 36px;
-            border-radius: 50%;
-            background: #3c4043;
-            color: #fff;
-            border: none;
-            cursor: pointer;
-            font-size: 20px;
-            display: flex; align-items: center; justify-content: center;
-            flex-shrink: 0;
-            transition: 0.2s;
-        }
-        #plus-btn:hover { background: #555; }
-
-        textarea {
-            flex: 1;
-            background: transparent;
-            border: none;
-            color: #fff;
-            font-size: 16px;
-            resize: none;
-            padding: 8px 0;
-            height: 24px; /* 初始高度 */
-            max-height: 150px;
-            outline: none;
-            font-family: 'Google Sans', sans-serif;
-        }
-
-        #send-btn {
-            background: transparent;
-            border: none;
-            color: #fff;
-            cursor: pointer;
-            padding: 8px;
-            opacity: 0.5;
-            transition: 0.2s;
-        }
-        #send-btn:hover { opacity: 1; background: #3c4043; border-radius: 50%; }
-        #send-btn svg { width: 20px; height: 20px; fill: currentColor; }
-
-        /* Loading 動畫 */
-        .loading-gemini {
-            height: 4px;
-            width: 100%;
-            background: linear-gradient(90deg, #4285f4, #9b72cb, #d96570);
-            background-size: 200% 100%;
-            animation: gradientMove 2s linear infinite;
-            border-radius: 4px;
-            margin-top: 10px;
-        }
-        @keyframes gradientMove { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
-
-        /* 檔案標籤 */
-        #attached-file {
-            font-size: 12px;
-            background: #004a77;
-            color: #c2e7ff;
-            padding: 4px 10px;
-            border-radius: 4px;
-            margin-bottom: 5px;
-            display: none; /* 預設隱藏 */
-            width: fit-content;
-        }
-
-        /* 啟動遮罩 */
-        #boot-screen { position: fixed; inset: 0; background: #131314; z-index: 999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        .boot-card { text-align: center; width: 300px; }
-        .boot-input { width: 100%; padding: 12px; background: #1e1f20; border: 1px solid #333; color: white; border-radius: 8px; margin-top: 20px; text-align: center; }
+        /* Boot */
+        #boot { position: fixed; inset: 0; background: #131314; z-index: 999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        input.key { width: 300px; padding: 10px; background: #222; border: 1px solid #444; color: white; text-align: center; border-radius: 8px; margin-top: 20px; }
     </style>
 </head>
 <body>
 
-    <div id="boot-screen">
-        <div class="boot-card">
-            <h1 style="background: linear-gradient(to right, #4285f4, #d96570); -webkit-background-clip: text; color: transparent;">Gemini IDE</h1>
-            <p style="color:#888;">Direct Mode • No Streaming</p>
-            <input type="password" id="apiKey" class="boot-input" placeholder="Enter OpenRouter API Key">
-            <button onclick="start()" style="margin-top:15px; padding:10px 20px; background:#4285f4; color:white; border:none; border-radius:20px; cursor:pointer; font-weight:bold;">開始對話</button>
-        </div>
+    <div id="boot">
+        <h1 style="background: linear-gradient(to right, #4285f4, #d96570); -webkit-background-clip: text; color: transparent;">Gemini Audit (All Files)</h1>
+        <p style="color:#888;">一次讀取所有檔案 • No Streaming</p>
+        <input type="password" id="apiKey" class="key" placeholder="Enter OpenRouter Key">
+        <button onclick="start()" style="margin-top:20px; padding:10px 30px; background:#4285f4; color:white; border:none; border-radius:20px; cursor:pointer;">開始</button>
     </div>
 
     <div id="sidebar">
-        <div class="new-chat-btn" onclick="location.reload()">
-            <span>+ New Chat</span>
-        </div>
-        
-        <div class="section-title">PROJECT FILES</div>
-        <div id="file-list">
-            <div style="padding:10px; color:#555; font-size:12px;">No files loaded.<br>Click '+' to upload ZIP.</div>
-        </div>
+        <div class="file-count" id="file-count">NO FILES LOADED</div>
+        <div id="file-list"></div>
     </div>
 
     <div id="main">
         <div id="top-bar">
             <span>Gemini IDE</span>
-            <span style="margin: 0 10px; color: #444;">/</span>
             <select id="model-select">
                 <option value="openrouter/pony-alpha">🦄 Pony Alpha (200k)</option>
                 <option value="google/gemini-2.0-flash-001">⚡ Gemini 2.0 Flash</option>
-                <option value="anthropic/claude-3-haiku">🌪 Claude 3 Haiku</option>
                 <option value="liquid/lfm-40b">💧 Liquid LFM-40B</option>
             </select>
         </div>
 
-        <div id="chat-container">
-            <div class="msg msg-ai">
+        <div id="chat-box">
+            <div class="msg">
                 <div class="avatar a">✨</div>
-                <div class="content">
-                    你好！我是你的代碼助手。<br>
-                    請點擊下方的 <b>+</b> 按鈕上傳 ZIP 檔案，然後點選左側檔案即可開始提問。
-                </div>
+                <div class="content">你好。請上傳 ZIP，我會一次讀取所有代碼，你直接問「全面檢查」即可。</div>
             </div>
         </div>
 
         <div id="input-area">
-            <div id="attached-file">📎 <span id="filename-display"></span></div>
-            <div id="input-box-wrapper">
-                <button id="plus-btn" onclick="document.getElementById('hidden-upload').click()">+</button>
-                <textarea id="user-input" placeholder="問點什麼..." rows="1" oninput="autoResize(this)"></textarea>
-                <button id="send-btn" onclick="sendMessage()">
-                    <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
-                </button>
-            </div>
-            <div style="text-align:center; font-size:11px; color:#555; margin-top:10px;">
-                Gemini IDE may display inaccurate info, including about people, so double-check its responses.
+            <div id="all-files-badge">📚 已載入 0 個檔案 (準備發送)</div>
+            <div class="input-wrapper">
+                <button onclick="document.getElementById('hidden-upload').click()" style="width:30px; height:30px; border-radius:50%; border:none; background:#444; color:white; cursor:pointer;">+</button>
+                <textarea id="user-input" placeholder="例：檢查全部檔案的安全性..." oninput="this.style.height='';this.style.height=this.scrollHeight+'px'"></textarea>
+                <button onclick="send()" style="background:none; border:none; color:white; cursor:pointer;">➤</button>
             </div>
         </div>
     </div>
@@ -283,26 +105,14 @@
     <input type="file" id="hidden-upload" accept=".zip" style="display:none">
 
     <script>
-        let state = {
-            key: '',
-            files: {},
-            currentFile: null,
-            isProcessing: false
-        };
+        let state = { key: '', allCode: '', fileCount: 0 };
 
         function start() {
-            const k = document.getElementById('apiKey').value;
-            if(!k) return alert("請輸入 Key");
-            state.key = k;
-            document.getElementById('boot-screen').style.display = 'none';
+            state.key = document.getElementById('apiKey').value;
+            if(state.key) document.getElementById('boot').style.display = 'none';
         }
 
-        function autoResize(textarea) {
-            textarea.style.height = 'auto';
-            textarea.style.height = textarea.scrollHeight + 'px';
-        }
-
-        // --- 1. ZIP 上傳處理 ---
+        // --- 1. ZIP 處理 (一次拼裝所有檔案) ---
         document.getElementById('hidden-upload').addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if(!file) return;
@@ -310,88 +120,73 @@
             const zip = new JSZip();
             try {
                 const content = await zip.loadAsync(file);
-                state.files = {};
                 const list = document.getElementById('file-list');
                 list.innerHTML = "";
+                state.allCode = ""; // 清空舊代碼
+                state.fileCount = 0;
 
-                // 白名單過濾
-                const ALLOWED = ['.js', '.html', '.css', '.py', '.java', '.json', '.md', '.txt'];
+                const ALLOWED = ['.js', '.html', '.css', '.py', '.java', '.json', '.md', '.txt', '.cpp', '.cs', '.php'];
 
                 for(let path in content.files) {
                     if(content.files[path].dir) continue;
-                    if(path.includes('__MACOSX') || path.includes('.DS_Store')) continue;
+                    if(path.includes('__MACOSX') || path.includes('.DS_Store') || path.includes('.git/')) continue;
 
                     const ext = "." + path.split('.').pop().toLowerCase();
                     if(ALLOWED.includes(ext)) {
                         const text = await content.files[path].async("string");
-                        state.files[path] = text;
-
-                        const div = document.createElement("div");
-                        div.className = "file-item";
-                        div.innerText = path;
-                        div.onclick = () => selectFile(path, div);
-                        list.appendChild(div);
+                        
+                        // 🔥 關鍵：把所有檔案內容拼接到一個超級字串裡
+                        state.allCode += `\n\n=== FILE START: ${path} ===\n${text}\n=== FILE END ===\n`;
+                        
+                        // UI 更新
+                        const item = document.createElement("div");
+                        item.className = "file-item";
+                        item.innerText = path;
+                        list.appendChild(item);
+                        state.fileCount++;
                     }
                 }
-                
-                // 自動選取第一個檔案
-                if(Object.keys(state.files).length > 0) {
-                    const firstFile = Object.keys(state.files)[0];
-                    selectFile(firstFile, list.firstChild);
-                }
+
+                document.getElementById('file-count').innerText = `${state.fileCount} FILES LOADED`;
+                const badge = document.getElementById('all-files-badge');
+                badge.style.display = 'block';
+                badge.innerText = `📚 已載入 ${state.fileCount} 個檔案 (總字數: ${state.allCode.length})`;
+                badge.style.background = '#004a77'; 
 
             } catch(err) { alert("ZIP Error: " + err); }
         });
 
-        // --- 2. 選擇檔案 (Context 切換) ---
-        function selectFile(path, el) {
-            state.currentFile = path;
-            
-            // 左側高亮
-            document.querySelectorAll('.file-item').forEach(x => x.classList.remove('active'));
-            if(el) el.classList.add('active');
-
-            // 輸入框上方顯示小標籤
-            document.getElementById('attached-file').style.display = 'block';
-            document.getElementById('filename-display').innerText = path;
-        }
-
-        // --- 3. 發送 (NO Streaming, Just Fetch) ---
-        async function sendMessage() {
+        // --- 2. 發送 (一次吐回 No Stream) ---
+        async function send() {
             const input = document.getElementById('user-input');
             const txt = input.value.trim();
-            if(!txt || state.isProcessing) return;
+            if(!txt) return;
+            
+            // 檢查是否有代碼
+            if(state.allCode.length === 0) return alert("請先載入 ZIP 檔案！");
 
-            // UI 狀態更新
-            state.isProcessing = true;
             input.value = "";
-            input.style.height = '24px'; // 重置高度
-            appendMessage('user', txt);
+            appendMsg('u', txt);
 
-            // 顯示 Loading (Gemini Style)
+            // 顯示 Loading
             const loadingId = appendLoading();
 
-            // 準備 Prompt (暴力讀取)
-            let context = "";
-            if(state.currentFile) {
-                const code = state.files[state.currentFile];
-                context = `
-[CONTEXT FILE: ${state.currentFile}]
-\`\`\`
-${code}
-\`\`\`
+            // 構建 Prompt (暴力全給)
+            const prompt = `
+Context: The user has uploaded ${state.fileCount} files.
+Here is the content of ALL files combined:
+
+${state.allCode}
 
 User Question: ${txt}
-Please answer based on the code above.
+
+Instructions:
+1. Analyze the ENTIRE codebase provided above.
+2. Answer the user's question comprehensively.
+3. Use Markdown for formatting.
 `;
-            } else {
-                context = txt;
-            }
 
             try {
-                const model = document.getElementById('model-select').value;
-                
-                // 單次請求 (wait for full response)
                 const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                     method: "POST",
                     headers: {
@@ -399,79 +194,61 @@ Please answer based on the code above.
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
-                        model: model,
-                        messages: [{ role: "user", content: context }],
-                        stream: false // 🔥 關鍵：關閉串流，保證無亂碼
+                        model: document.getElementById('model-select').value,
+                        messages: [{ role: "user", content: prompt }],
+                        stream: false // ❌ 絕對不串流，保證無亂碼
                     })
                 });
 
                 const data = await res.json();
-                
-                // 移除 Loading
-                document.getElementById(loadingId).remove();
+                document.getElementById(loadingId).remove(); // 移除 Loading
 
                 if(data.error) {
-                    appendMessage('ai', `<span style="color:red">Error: ${data.error.message}</span>`);
+                    appendMsg('a', `<span style="color:red">Error: ${data.error.message}</span>`);
                 } else {
                     const reply = data.choices[0].message.content;
-                    appendMessage('ai', reply);
+                    appendMsg('a', reply);
                 }
 
             } catch(e) {
                 document.getElementById(loadingId).remove();
-                appendMessage('ai', `<span style="color:red">Network Error: ${e.message}</span>`);
+                appendMsg('a', "Network Error: " + e.message);
             }
-
-            state.isProcessing = false;
         }
 
-        function appendMessage(role, text) {
-            const container = document.getElementById('chat-container');
+        function appendMsg(role, text) {
+            const box = document.getElementById('chat-box');
             const div = document.createElement("div");
-            div.className = `msg msg-${role}`;
+            div.className = "msg";
             
-            const avatar = role === 'user' ? '<div class="avatar u">U</div>' : '<div class="avatar a">✨</div>';
-            
-            // 使用 marked 渲染 Markdown
-            const htmlContent = role === 'ai' ? marked.parse(text) : text.replace(/\n/g, '<br>');
+            const avatar = role === 'u' ? '<div class="avatar u">U</div>' : '<div class="avatar a">✨</div>';
+            const html = role === 'u' ? text : marked.parse(text); // AI 回覆用 Markdown 渲染
 
             div.innerHTML = `
-                ${role === 'ai' ? avatar : ''}
-                <div class="content">${htmlContent}</div>
-                ${role === 'user' ? avatar : ''}
+                ${avatar}
+                <div class="content">${html}</div>
             `;
-            
-            container.appendChild(div);
-            // 捲動到底部
-            container.scrollTo(0, container.scrollHeight);
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
         }
 
         function appendLoading() {
             const id = 'loading-' + Date.now();
-            const container = document.getElementById('chat-container');
+            const box = document.getElementById('chat-box');
             const div = document.createElement("div");
             div.id = id;
-            div.className = "msg msg-ai";
+            div.className = "msg";
             div.innerHTML = `
                 <div class="avatar a">✨</div>
                 <div class="content" style="width:200px">
-                    <div style="font-size:13px; color:#888;">Generating response...</div>
-                    <div class="loading-gemini"></div>
+                    <div style="font-size:13px; color:#888;">Reading ${state.fileCount} files & Generating...</div>
+                    <div class="loading-bar"></div>
                 </div>
             `;
-            container.appendChild(div);
-            container.scrollTo(0, container.scrollHeight);
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
             return id;
         }
-
-        // Enter 發送
-        document.getElementById('user-input').addEventListener('keydown', (e) => {
-            if(e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-            }
-        });
-
     </script>
 </body>
 </html>
