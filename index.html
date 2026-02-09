@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pony IDE God Mode</title>
+    <title>Pony IDE (Pony + Kimi)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs/loader.min.js"></script>
     <style>
@@ -18,16 +18,16 @@
         #sidebar { width: 220px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; position: absolute; z-index: 10; height: 100%; top: 0; left: 0; transform: translateX(-100%); transition: 0.3s; }
         #sidebar.open { transform: translateX(0); }
         
-        .sidebar-header { padding: 10px; border-bottom: 1px solid var(--border); font-weight:bold; color:#fff; }
+        .sidebar-header { padding: 10px; border-bottom: 1px solid var(--border); font-weight:bold; color:#fff; display:flex; justify-content:space-between; align-items:center; }
         #file-list { flex: 1; overflow-y: auto; }
         .file-item { padding: 8px 15px; font-size: 13px; cursor: pointer; border-left: 2px solid transparent; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .file-item.active { background: #37373d; border-left-color: var(--accent); color: white; }
 
         #editor-container { flex: 1; width: 100%; height: 100%; background: #1e1e1e; }
         
-        /* 中間的大按鈕 */
+        /* 螢幕正中間的大按鈕 */
         .center-screen { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #555; }
-        .big-btn { background: #007acc; color: white; padding: 15px 30px; border-radius: 8px; font-size: 16px; border: none; margin-top: 20px; cursor: pointer; }
+        .big-btn { background: #007acc; color: white; padding: 15px 30px; border-radius: 8px; font-size: 16px; border: none; margin-top: 20px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
 
         #ai-drawer { position: absolute; bottom: 0; width: 100%; height: 50%; background: var(--bg); border-top: 2px solid var(--accent); display: flex; flex-direction: column; transform: translateY(100%); transition: 0.3s; z-index: 30; }
         #ai-drawer.open { transform: translateY(0); }
@@ -37,6 +37,9 @@
         
         #input-area { padding: 10px; background: #252526; display: flex; gap: 8px; align-items: center; }
         #prompt-input { flex: 1; background: #3c3c3c; border: 1px solid #555; color: white; padding: 10px; border-radius: 20px; outline: none; }
+        
+        /* 模型選單樣式 */
+        #modelSelect { background: #333; color: #fff; border: 1px solid #444; padding: 8px; border-radius: 4px; font-size: 12px; max-width: 140px; }
 
         #boot-screen { position: fixed; inset: 0; background: #1e1e1e; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; transition: opacity 0.5s; }
         .card { background: #252526; padding: 30px; border-radius: 12px; width: 100%; max-width: 350px; border: 1px solid #333; text-align: center; }
@@ -49,29 +52,32 @@
 
     <div id="boot-screen">
         <div class="card">
-            <h2 style="color:white; margin:0 0 10px 0;">Pony IDE <span style="font-size:12px; color:gold">GOD MODE</span></h2>
-            <p style="color:#888; font-size:13px;">請輸入 API Key</p>
+            <h2 style="color:white; margin:0 0 10px 0;">Pony IDE</h2>
+            <p style="color:#888; font-size:13px;">請輸入 OpenRouter API Key</p>
             <input type="password" id="apiKey" placeholder="sk-or-v1...">
             <button class="btn" style="width:100%; padding:12px; font-size:14px;" onclick="enterIDE()">進入系統</button>
         </div>
     </div>
 
     <header>
-        <button class="btn" style="background:#444" onclick="toggleSidebar()">☰ 檔案列表</button>
-        <span id="status-text" style="color:#4cd964; font-size:12px; font-weight:bold;">等待上傳...</span>
+        <button class="btn" style="background:#444" onclick="toggleSidebar()">☰ 檔案</button>
+        <span id="status-text" style="color:#4cd964; font-size:12px; font-weight:bold;">等待載入</span>
         <button class="btn btn-green" onclick="exportZip()">💾 匯出 ZIP</button>
     </header>
 
     <div id="workspace">
         <div id="sidebar">
-            <div class="sidebar-header">專案結構</div>
+            <div class="sidebar-header">
+                專案檔案
+                <button class="btn" style="padding:2px 8px;" onclick="triggerUpload()">+</button>
+            </div>
             <div id="file-list"></div>
         </div>
         <div id="editor-container">
             <div class="center-screen" id="welcome-screen">
-                <div style="font-size:50px; margin-bottom:10px;">📦</div>
-                <p>請上傳整個專案 ZIP</p>
-                <button class="big-btn" onclick="triggerUpload()">+ 載入 ZIP (全專案分析)</button>
+                <div style="font-size:50px; margin-bottom:10px;">📂</div>
+                <p>支援 Kimi 2.5 全局分析</p>
+                <button class="big-btn" onclick="triggerUpload()">+ 點擊載入專案 ZIP</button>
             </div>
         </div>
     </div>
@@ -80,15 +86,15 @@
 
     <div id="ai-drawer">
         <div class="drawer-header" onclick="toggleAI()">
-            <span>🤖 全局分析助手</span> <span>⬇</span>
+            <span>🤖 AI 分析助手</span> <span>⬇</span>
         </div>
         <div id="chat-log"></div>
         <div id="input-area">
-            <select id="modelSelect" style="background:#333; color:#aaa; border:1px solid #444; padding:5px; display:none;">
-                <option value="google/gemini-2.0-flash-001" selected>Gemini 2.0 (推薦)</option>
-                <option value="liquid/lfm-40b">Liquid LFM</option>
+            <select id="modelSelect">
+                <option value="moonshot/moonshot-v1-128k" selected>Kimi 2.5 (Moonshot)</option>
+                <option value="openrouter/pony-alpha">Pony Alpha</option>
             </select>
-            <input type="text" id="prompt-input" placeholder="例如: 分析這個遊戲的物理引擎邏輯...">
+            <input type="text" id="prompt-input" placeholder="例如: 分析 object_pool.js 的邏輯...">
             <button class="btn" onclick="askAI()">發送</button>
         </div>
     </div>
@@ -138,16 +144,15 @@
                 }
                 
                 document.getElementById('welcome-screen').style.display = 'none';
-                document.getElementById('status-text').innerText = `✅ 已載入 ${fileCount} 個檔案 (AI 已讀取全域)`;
+                document.getElementById('status-text').innerText = `✅ ${fileCount} 個檔案已就緒`;
                 
                 initEditor(firstFile);
                 
-                // 自動打開 AI 面板並告知用戶
                 const log = document.getElementById('chat-log');
-                log.innerHTML = `<div class="msg-ai">系統: 專案已載入 ${fileCount} 個檔案。\n我現在已經掌握了【整個專案】的內容。\n\n你可以問我：「分析這個專案的架構」或「哪裡有記憶體洩漏？」</div>`;
+                log.innerHTML = `<div class="msg-ai">✅ 專案已載入 ${fileCount} 個檔案。\n\n預設模型已設定為 **Kimi 2.5 (Moonshot)**。\n我已經準備好讀取整個專案代碼，請下指令。</div>`;
                 toggleAI();
 
-            } catch(e) { alert("ZIP 錯誤: " + e); }
+            } catch(e) { alert("ZIP 讀取失敗: " + e); }
             fileInput.value = '';
         }
 
@@ -175,7 +180,6 @@
             if(window.innerWidth < 600) document.getElementById('sidebar').classList.remove('open');
         }
 
-        // 🔥 核心修改：這裡就是「全專案讀取」的邏輯 🔥
         async function askAI() {
             const input = document.getElementById('prompt-input');
             const model = document.getElementById('modelSelect').value;
@@ -183,33 +187,34 @@
             const txt = input.value;
             if(!txt) return;
 
-            log.innerHTML += `<div style="text-align:right; color:#9cdcfe; font-weight:bold; margin-bottom:5px;">YOU: ${txt}</div><div id="thinking" style="color:#aaa;">AI 正在閱讀全專案...</div>`;
+            log.innerHTML += `<div style="text-align:right; color:#9cdcfe; font-weight:bold; margin-bottom:5px;">YOU: ${txt}</div><div id="thinking" style="color:#aaa;">Kimi 正在閱讀全專案...</div>`;
             log.scrollTop = log.scrollHeight;
             input.value = "";
 
-            // 1. 暴力拼接所有檔案內容
-            let fullProjectContext = "【Current Project State (All Files)】:\n";
+            // 全局讀取邏輯
+            let fullProjectContext = `【Project Context (Reading All Files)】:\n`;
             for (let path in files) {
-                fullProjectContext += `\n--- START OF FILE: ${path} ---\n${files[path]}\n--- END OF FILE: ${path} ---\n`;
+                fullProjectContext += `\n--- FILE START: ${path} ---\n${files[path]}\n--- FILE END ---\n`;
             }
-
-            // 2. 加上用戶的指令
-            const context = `${fullProjectContext}\n\n【User Question】: ${txt}\n\n(Please analyze the whole project context above to answer)`;
+            const context = `${fullProjectContext}\n\n【User Question】: ${txt}`;
 
             try {
                 const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                     method: "POST", headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
                     body: JSON.stringify({ 
                         model: model, 
-                        messages: [{role: "user", content: context}] 
-                        // 注意：這裡移除了 temperature 等參數，保持最簡
+                        messages: [{role: "user", content: context}]
                     })
                 });
                 const data = await res.json();
                 document.getElementById('thinking').remove();
                 
-                const reply = data.choices ? data.choices[0].message.content : "Error: " + JSON.stringify(data);
-                log.innerHTML += `<div class="msg-ai">${reply}</div>`;
+                if (data.error) {
+                    log.innerHTML += `<div class="msg-ai" style="color:red">Error: ${data.error.message}</div>`;
+                } else {
+                    const reply = data.choices ? data.choices[0].message.content : "No response";
+                    log.innerHTML += `<div class="msg-ai">${reply}</div>`;
+                }
             } catch(e) { if(document.getElementById('thinking')) document.getElementById('thinking').innerHTML = "Net Error"; }
             log.scrollTop = log.scrollHeight;
         }
@@ -219,7 +224,7 @@
             for(let path in files) zip.file(path, files[path]);
             zip.generateAsync({type:"blob"}).then(blob => {
                 const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob); a.download = "full_project.zip"; a.click();
+                a.href = URL.createObjectURL(blob); a.download = "kimi_edited_project.zip"; a.click();
             });
         }
 
